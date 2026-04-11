@@ -14,11 +14,12 @@ import (
 )
 
 type backgroundServerState struct {
-	PID       int    `json:"pid"`
-	Addr      string `json:"addr"`
-	URL       string `json:"url"`
-	LogPath   string `json:"logPath"`
-	StartedAt string `json:"startedAt"`
+	PID            int    `json:"pid"`
+	Addr           string `json:"addr"`
+	URL            string `json:"url"`
+	LogPath        string `json:"logPath"`
+	StartedAt      string `json:"startedAt"`
+	ExecutablePath string `json:"executablePath,omitempty"`
 }
 
 type backgroundPaths struct {
@@ -32,6 +33,10 @@ func runStart(args []string) error {
 	if err != nil {
 		return err
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
 	paths, err := resolveBackgroundPaths()
 	if err != nil {
 		return err
@@ -41,16 +46,21 @@ func runStart(args []string) error {
 		return err
 	}
 	if existing != nil && platform.ProcessExists(existing.PID) {
-		fmt.Printf("账号池服务已在后台运行: %s\n", existing.URL)
-		return nil
+		if !shouldReplaceExistingServer(existing, executable, addr) {
+			fmt.Printf("账号池服务已在后台运行: %s\n", existing.URL)
+			return nil
+		}
+		if err := platform.StopProcess(existing.PID); err != nil {
+			return err
+		}
+		if err := waitForProcessExit(existing.PID, 4*time.Second); err != nil {
+			return err
+		}
+		_ = os.Remove(paths.PIDPath)
+		fmt.Println("已停止旧后台服务，正在切换到当前版本")
 	}
 	if existing != nil {
 		_ = os.Remove(paths.PIDPath)
-	}
-
-	executable, err := os.Executable()
-	if err != nil {
-		return err
 	}
 	serveArgs := []string{"serve", addr}
 	if !openBrowser {
@@ -61,11 +71,12 @@ func runStart(args []string) error {
 		return err
 	}
 	state := backgroundServerState{
-		PID:       pid,
-		Addr:      addr,
-		URL:       "http://" + callbackHostForAddr(addr) + "/",
-		LogPath:   paths.LogPath,
-		StartedAt: time.Now().Format(time.RFC3339),
+		PID:            pid,
+		Addr:           addr,
+		URL:            "http://" + callbackHostForAddr(addr) + "/",
+		LogPath:        paths.LogPath,
+		StartedAt:      time.Now().Format(time.RFC3339),
+		ExecutablePath: executable,
 	}
 	if err := writeBackgroundState(paths.PIDPath, state); err != nil {
 		return err
@@ -183,4 +194,36 @@ func waitForServerReady(baseURL string, timeout time.Duration) error {
 		time.Sleep(150 * time.Millisecond)
 	}
 	return errors.New("server not ready")
+}
+
+func waitForProcessExit(pid int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !platform.ProcessExists(pid) {
+			return nil
+		}
+		time.Sleep(120 * time.Millisecond)
+	}
+	return fmt.Errorf("旧后台服务停止超时，请稍后重试")
+}
+
+func shouldReplaceExistingServer(existing *backgroundServerState, executable, addr string) bool {
+	if existing == nil {
+		return false
+	}
+	if normalizeExecutablePath(existing.ExecutablePath) == "" {
+		return true
+	}
+	if normalizeExecutablePath(existing.ExecutablePath) != normalizeExecutablePath(executable) {
+		return true
+	}
+	return strings.TrimSpace(existing.Addr) != strings.TrimSpace(addr)
+}
+
+func normalizeExecutablePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Clean(path)
 }

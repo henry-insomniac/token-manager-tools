@@ -1,7 +1,7 @@
 Token Manager Tools
 
 版本：
-0.1.0-preview.5
+0.1.0-preview.6
 
 用途：
 本工具用于在本机管理 Codex/OpenAI 账号池。它不需要安装 OpenClaw，也不会上传 token。
@@ -33,6 +33,10 @@ Windows PowerShell:
   token-manager start 18080  使用指定端口后台启动
   token-manager status    查看服务是否正在后台运行
   token-manager stop      停止后台服务
+
+更新说明：
+  新版本执行 start 时，会自动停止之前运行中的旧版本后台服务，然后切换到当前版本。
+  这样替换新包后，不需要先手动处理旧版本占用。
 
 常用账号池命令：
   token-manager list

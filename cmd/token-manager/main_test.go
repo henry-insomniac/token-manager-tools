@@ -62,3 +62,43 @@ func TestParseServeArgsRejectsRemoteHostByDefault(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestShouldReplaceExistingServer(t *testing.T) {
+	currentExec := "/tmp/token-manager-new"
+	addr := "127.0.0.1:1455"
+
+	if shouldReplaceExistingServer(nil, currentExec, addr) {
+		t.Fatalf("nil state should not request replacement")
+	}
+
+	if !shouldReplaceExistingServer(&backgroundServerState{
+		PID:  100,
+		Addr: addr,
+	}, currentExec, addr) {
+		t.Fatalf("missing executable path should trigger replacement")
+	}
+
+	if !shouldReplaceExistingServer(&backgroundServerState{
+		PID:            100,
+		Addr:           addr,
+		ExecutablePath: "/tmp/token-manager-old",
+	}, currentExec, addr) {
+		t.Fatalf("different executable should trigger replacement")
+	}
+
+	if !shouldReplaceExistingServer(&backgroundServerState{
+		PID:            100,
+		Addr:           "127.0.0.1:18080",
+		ExecutablePath: currentExec,
+	}, currentExec, addr) {
+		t.Fatalf("different addr should trigger replacement")
+	}
+
+	if shouldReplaceExistingServer(&backgroundServerState{
+		PID:            100,
+		Addr:           addr,
+		ExecutablePath: currentExec,
+	}, currentExec, addr) {
+		t.Fatalf("same executable and addr should keep existing service")
+	}
+}
