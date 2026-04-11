@@ -171,21 +171,21 @@ function renderDetail() {
 
 function renderAutoSwitch() {
   const status = state.autoSwitch || { enabled: false, events: [] };
-  els.autoSwitchBadge.textContent = status.enabled ? "已开启" : "未开启";
+  els.autoSwitchBadge.textContent = status.enabled ? "开启" : "关闭";
   els.autoSwitchBadge.className = `badge ${status.enabled ? "ok" : ""}`;
-  els.autoSwitchToggle.textContent = status.enabled ? "关闭自动切换" : "开启自动切换";
+  els.autoSwitchToggle.textContent = status.enabled ? "关闭" : "开启";
   els.autoSwitchMeta.innerHTML = `
-    ${detailItem("上次检查", formatDateTime(status.lastCheckedAt) || "未检查")}
-    ${detailItem("上次切换", formatDateTime(status.lastSwitchedAt) || "未切换")}
-    ${detailItem("当前判断", status.lastMessage || "未开启自动切换")}
+    ${detailItem("最近检查", formatDateTime(status.lastCheckedAt) || "未检查")}
+    ${detailItem("最近切换", formatDateTime(status.lastSwitchedAt) || "未切换")}
+    ${detailItem("状态", compactAutoSwitchMessage(status.lastMessage || "自动切换未开启"))}
   `;
   if (!status.events?.length) {
-    els.autoSwitchEvents.innerHTML = `<p class="muted auto-switch-empty">还没有自动切换记录。</p>`;
+    els.autoSwitchEvents.innerHTML = `<p class="muted auto-switch-empty">暂无记录</p>`;
     return;
   }
   els.autoSwitchEvents.innerHTML = status.events
     .map((event) => {
-      const parts = [event.message];
+      const parts = [compactAutoSwitchMessage(event.message)];
       if (event.reason) {
         parts.push(`原因：${event.reason}`);
       }
@@ -491,6 +491,32 @@ function autoSwitchEventLabel(type) {
   if (type === "enabled") return "已开启";
   if (type === "disabled") return "已关闭";
   return "状态";
+}
+
+function compactAutoSwitchMessage(message) {
+  if (!message) return "未开启";
+  if (message === "自动切换未开启") return "未开启";
+  if (message === "自动切换已开启") return "已开启";
+  if (message === "自动切换已关闭") return "已关闭";
+  if (message === "没有可自动切换的可用账号") return "无可切账号";
+
+  const healthyMatch = message.match(/^(.+?) 额度可用，无需切换$/);
+  if (healthyMatch) return `${healthyMatch[1]} 可用`;
+
+  const switchedMatch = message.match(/^已自动切换到 (.+)$/);
+  if (switchedMatch) return `已切到 ${switchedMatch[1]}`;
+
+  const foundMatch = message.match(/^已找到 (.+?)，但距离上次自动切换过近，暂不重复切换$/);
+  if (foundMatch) return `已找到 ${foundMatch[1]}，暂不切`;
+
+  const failedProbeMatch = message.match(/^(.+?) 检查失败，暂不自动切换$/);
+  if (failedProbeMatch) return `${failedProbeMatch[1]} 检查失败`;
+
+  const switchFailMatch = message.match(/^自动切换到 (.+?) 失败$/);
+  if (switchFailMatch) return `切到 ${switchFailMatch[1]} 失败`;
+
+  if (message === "读取账号池失败，暂不自动切换") return "读取失败";
+  return message;
 }
 
 async function silentRefreshDashboard() {
