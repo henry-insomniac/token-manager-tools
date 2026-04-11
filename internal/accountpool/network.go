@@ -13,8 +13,9 @@ import (
 )
 
 type runtimeSettings struct {
-	LastProxyURL string `json:"lastProxyUrl,omitempty"`
-	ProxyURL     string `json:"proxyUrl,omitempty"`
+	LastProxyURL string           `json:"lastProxyUrl,omitempty"`
+	ProxyURL     string           `json:"proxyUrl,omitempty"`
+	AutoSwitch   AutoSwitchStatus `json:"autoSwitch,omitempty"`
 }
 
 type proxyCandidate struct {
@@ -23,10 +24,32 @@ type proxyCandidate struct {
 }
 
 func (pool *AccountPool) loadRuntimeSettings() runtimeSettings {
+	pool.settingsMu.Lock()
+	defer pool.settingsMu.Unlock()
+	return pool.loadRuntimeSettingsLocked()
+}
+
+func (pool *AccountPool) loadRuntimeSettingsLocked() runtimeSettings {
 	if strings.TrimSpace(pool.settingsPath) == "" {
 		return runtimeSettings{}
 	}
-	return readJSONFile(pool.settingsPath, runtimeSettings{})
+	settings := readJSONFile(pool.settingsPath, runtimeSettings{})
+	settings.AutoSwitch = normalizeAutoSwitchStatus(settings.AutoSwitch)
+	return settings
+}
+
+func (pool *AccountPool) saveRuntimeSettings(settings runtimeSettings) error {
+	pool.settingsMu.Lock()
+	defer pool.settingsMu.Unlock()
+	return pool.saveRuntimeSettingsLocked(settings)
+}
+
+func (pool *AccountPool) saveRuntimeSettingsLocked(settings runtimeSettings) error {
+	if strings.TrimSpace(pool.settingsPath) == "" {
+		return nil
+	}
+	settings.AutoSwitch = normalizeAutoSwitchStatus(settings.AutoSwitch)
+	return writeJSONFile(pool.settingsPath, settings)
 }
 
 func (pool *AccountPool) cachedProxyURL() string {
@@ -38,12 +61,14 @@ func (pool *AccountPool) rememberWorkingProxy(proxyURL string) {
 	if strings.TrimSpace(pool.settingsPath) == "" {
 		return
 	}
-	settings := pool.loadRuntimeSettings()
+	pool.settingsMu.Lock()
+	defer pool.settingsMu.Unlock()
+	settings := pool.loadRuntimeSettingsLocked()
 	if strings.TrimSpace(settings.LastProxyURL) == strings.TrimSpace(proxyURL) {
 		return
 	}
 	settings.LastProxyURL = strings.TrimSpace(proxyURL)
-	_ = writeJSONFile(pool.settingsPath, settings)
+	_ = pool.saveRuntimeSettingsLocked(settings)
 }
 
 func (pool *AccountPool) newHTTPClient(proxyURL string) *http.Client {

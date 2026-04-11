@@ -2,7 +2,7 @@
 
 Token Manager Tools 是一个跨平台账号池管理工具。
 
-当前版本：`0.1.0-preview.6`
+当前版本：`0.1.0-preview.7`
 
 它从 OpenClaw Manager Native 的账号池能力中拆出来，目标是让 Windows、macOS、Linux 用户都能管理本机 Codex/OpenAI 账号池。用户不安装 OpenClaw 也能使用账号池；安装 OpenClaw 后，再启用兼容同步和运行时集成。
 
@@ -10,6 +10,8 @@ Token Manager Tools 是一个跨平台账号池管理工具。
 
 本次预览更新：
 
+- 增加自动兜底切换：当前账号不可用时，自动切到有额度的账号
+- 自动切换后台检查改为 `90-180 秒` 随机区间，避免固定节奏请求
 - 新版本执行 `start` 时会自动停止旧后台服务并切换到当前版本
 - 账号池页面改为更紧凑的关键信息展示，详情放到右侧面板
 - 额度数据接入页面，支持汇总、风险计数和卡片内额度条
@@ -25,6 +27,7 @@ Token Manager Tools 是一个跨平台账号池管理工具。
 - 手动登录兜底模式
 - 保存 OpenClaw/Codex 兼容认证文件
 - 自动尝试直连和常见本地代理端口，不开 TUN 也能检查额度
+- 后台自动切换账号开关与切换记录
 - 探测 Codex 额度，access token 失效时自动 refresh 后重试一次
 - 切换默认运行槽位
 - 移除槽位并归档本地资料
@@ -128,6 +131,7 @@ HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 ./token-manag
 - [架构设计](./docs/ARCHITECTURE.md)
 - [实施路线](./docs/ROADMAP.md)
 - [测试计划](./docs/TEST_PLAN.md)
+- [更新日志](./CHANGELOG.md)
 
 ## 和 OpenClaw Manager Native 的关系
 

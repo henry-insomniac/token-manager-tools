@@ -308,6 +308,188 @@ func TestProbeProfileAutoDetectsLoopbackProxy(t *testing.T) {
 	}
 }
 
+func TestSetAutoSwitchEnabledSwitchesToHealthyCandidate(t *testing.T) {
+	accessA := fakeAccessToken(t, "acct-a-id", "a@example.com")
+	accessB := fakeAccessToken(t, "acct-b-id", "b@example.com")
+	usageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch got := r.Header.Get("Authorization"); got {
+		case "Bearer " + accessA:
+			writeJSONResponse(t, w, map[string]any{
+				"rate_limit": map[string]any{
+					"primary_window": map[string]any{
+						"used_percent": 100,
+					},
+				},
+			})
+		case "Bearer " + accessB:
+			writeJSONResponse(t, w, map[string]any{
+				"rate_limit": map[string]any{
+					"primary_window": map[string]any{
+						"used_percent": 8,
+					},
+					"secondary_window": map[string]any{
+						"used_percent": 20,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected authorization: %s", got)
+		}
+	}))
+	defer usageServer.Close()
+
+	pool := newTestPoolWithConfig(t, Config{UsageURL: usageServer.URL})
+	if _, err := pool.CreateProfile("acct-a"); err != nil {
+		t.Fatalf("CreateProfile acct-a: %v", err)
+	}
+	if _, err := pool.CreateProfile("acct-b"); err != nil {
+		t.Fatalf("CreateProfile acct-b: %v", err)
+	}
+	if err := pool.PersistTokens("acct-a", OAuthTokens{
+		Access:    accessA,
+		Refresh:   "refresh-a",
+		IDToken:   "id-a",
+		Expires:   1893456000000,
+		AccountID: "acct-a-id",
+		Email:     "a@example.com",
+	}); err != nil {
+		t.Fatalf("PersistTokens acct-a: %v", err)
+	}
+	if err := pool.PersistTokens("acct-b", OAuthTokens{
+		Access:    accessB,
+		Refresh:   "refresh-b",
+		IDToken:   "id-b",
+		Expires:   1893456000000,
+		AccountID: "acct-b-id",
+		Email:     "b@example.com",
+	}); err != nil {
+		t.Fatalf("PersistTokens acct-b: %v", err)
+	}
+	if err := pool.ActivateProfile("acct-a"); err != nil {
+		t.Fatalf("ActivateProfile acct-a: %v", err)
+	}
+
+	result, err := pool.SetAutoSwitchEnabled(true)
+	if err != nil {
+		t.Fatalf("SetAutoSwitchEnabled: %v", err)
+	}
+	if !result.Switched {
+		t.Fatalf("expected auto switch to happen: %#v", result)
+	}
+	if result.Status.LastTo == nil || *result.Status.LastTo != "acct-b" {
+		t.Fatalf("expected acct-b to become target: %#v", result.Status)
+	}
+	profiles, err := pool.ListProfiles()
+	if err != nil {
+		t.Fatalf("ListProfiles: %v", err)
+	}
+	for _, profile := range profiles {
+		if profile.Name == "acct-b" && !profile.IsActive {
+			t.Fatalf("expected acct-b to be active after auto switch")
+		}
+	}
+}
+
+func TestRunAutoSwitchNowRespectsMinSwitchInterval(t *testing.T) {
+	current := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+	accessA := fakeAccessToken(t, "acct-a-id", "a@example.com")
+	accessB := fakeAccessToken(t, "acct-b-id", "b@example.com")
+	usageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch got := r.Header.Get("Authorization"); got {
+		case "Bearer " + accessA:
+			writeJSONResponse(t, w, map[string]any{
+				"rate_limit": map[string]any{
+					"primary_window": map[string]any{
+						"used_percent": 100,
+					},
+				},
+			})
+		case "Bearer " + accessB:
+			writeJSONResponse(t, w, map[string]any{
+				"rate_limit": map[string]any{
+					"primary_window": map[string]any{
+						"used_percent": 4,
+					},
+					"secondary_window": map[string]any{
+						"used_percent": 12,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected authorization: %s", got)
+		}
+	}))
+	defer usageServer.Close()
+
+	pool := newTestPoolWithConfig(t, Config{
+		UsageURL: usageServer.URL,
+		Clock: func() int64 {
+			return current.UnixNano()
+		},
+	})
+	if _, err := pool.CreateProfile("acct-a"); err != nil {
+		t.Fatalf("CreateProfile acct-a: %v", err)
+	}
+	if _, err := pool.CreateProfile("acct-b"); err != nil {
+		t.Fatalf("CreateProfile acct-b: %v", err)
+	}
+	if err := pool.PersistTokens("acct-a", OAuthTokens{
+		Access:    accessA,
+		Refresh:   "refresh-a",
+		IDToken:   "id-a",
+		Expires:   1893456000000,
+		AccountID: "acct-a-id",
+		Email:     "a@example.com",
+	}); err != nil {
+		t.Fatalf("PersistTokens acct-a: %v", err)
+	}
+	if err := pool.PersistTokens("acct-b", OAuthTokens{
+		Access:    accessB,
+		Refresh:   "refresh-b",
+		IDToken:   "id-b",
+		Expires:   1893456000000,
+		AccountID: "acct-b-id",
+		Email:     "b@example.com",
+	}); err != nil {
+		t.Fatalf("PersistTokens acct-b: %v", err)
+	}
+	if err := pool.ActivateProfile("acct-a"); err != nil {
+		t.Fatalf("ActivateProfile acct-a: %v", err)
+	}
+	settings := pool.loadRuntimeSettings()
+	settings.AutoSwitch.Enabled = true
+	settings.AutoSwitch.LastSwitchedAt = ptr(current.Add(-2 * time.Minute).Format(time.RFC3339))
+	if err := pool.saveRuntimeSettings(settings); err != nil {
+		t.Fatalf("saveRuntimeSettings: %v", err)
+	}
+
+	result, err := pool.RunAutoSwitchNow()
+	if err != nil {
+		t.Fatalf("RunAutoSwitchNow: %v", err)
+	}
+	if result.Switched {
+		t.Fatalf("expected no switch during cooldown interval")
+	}
+	if got := result.Status.LastMessage; !strings.Contains(got, "距离上次自动切换过近") || !strings.Contains(got, "acct-b") {
+		t.Fatalf("unexpected message: %s", got)
+	}
+}
+
+func TestNextAutoSwitchPollIntervalUsesConfiguredRange(t *testing.T) {
+	minDelay, maxDelay := AutoSwitchPollIntervalRange()
+	seen := map[time.Duration]bool{}
+	for range 64 {
+		delay := NextAutoSwitchPollInterval()
+		if delay < minDelay || delay > maxDelay {
+			t.Fatalf("poll interval out of range: %s not in [%s, %s]", delay, minDelay, maxDelay)
+		}
+		seen[delay] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("expected randomized poll interval, got only one value: %#v", seen)
+	}
+}
+
 func listenOnLoopbackProxyCandidate(t *testing.T) net.Listener {
 	t.Helper()
 	for _, candidate := range commonLoopbackProxyCandidates() {

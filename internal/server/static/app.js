@@ -3,6 +3,10 @@ const state = {
   selectedName: null,
   busy: new Set(),
   autoRefreshStarted: false,
+  autoSwitch: {
+    enabled: false,
+    events: [],
+  },
 };
 
 const els = {
@@ -16,6 +20,11 @@ const els = {
   checked: document.querySelector("#summary-checked"),
   fiveHourRisk: document.querySelector("#summary-fivehour-risk"),
   weekRisk: document.querySelector("#summary-week-risk"),
+  autoSwitchBadge: document.querySelector("#auto-switch-badge"),
+  autoSwitchToggle: document.querySelector("#auto-switch-toggle"),
+  autoSwitchRun: document.querySelector("#auto-switch-run"),
+  autoSwitchMeta: document.querySelector("#auto-switch-meta"),
+  autoSwitchEvents: document.querySelector("#auto-switch-events"),
 };
 
 els.form.addEventListener("submit", async (event) => {
@@ -29,24 +38,34 @@ els.form.addEventListener("submit", async (event) => {
     await api("/api/profiles", { method: "POST", body: { name } });
     els.input.value = "";
     showToast(`已创建 ${name}`);
-    await loadProfiles();
+    await loadDashboard();
   });
 });
 
 els.refresh.addEventListener("click", () => refreshAllUsage());
+els.autoSwitchToggle.addEventListener("click", () => toggleAutoSwitch());
+els.autoSwitchRun.addEventListener("click", () => runAutoSwitchCheck());
 
-loadProfiles();
+bootstrap();
+
+async function bootstrap() {
+  await loadDashboard();
+  window.setInterval(() => {
+    if (document.hidden) {
+      return;
+    }
+    silentRefreshDashboard();
+  }, 15000);
+}
+
+async function loadDashboard() {
+  await Promise.all([loadProfiles(), loadAutoSwitchStatus()]);
+}
 
 async function loadProfiles() {
   await runTask("load", async () => {
     const data = await api("/api/profiles");
-    state.profiles = data.profiles ?? [];
-    if (!state.selectedName && state.profiles.length > 0) {
-      state.selectedName = state.profiles.find((profile) => !profile.isDefault)?.name ?? state.profiles[0].name;
-    }
-    if (!state.profiles.some((profile) => profile.name === state.selectedName)) {
-      state.selectedName = state.profiles[0]?.name ?? null;
-    }
+    applyProfiles(data.profiles ?? []);
     render();
     maybeAutoRefreshUsage();
   });
@@ -54,6 +73,7 @@ async function loadProfiles() {
 
 function render() {
   renderSummary();
+  renderAutoSwitch();
   renderList();
   renderDetail();
 }
@@ -149,6 +169,39 @@ function renderDetail() {
   `;
 }
 
+function renderAutoSwitch() {
+  const status = state.autoSwitch || { enabled: false, events: [] };
+  els.autoSwitchBadge.textContent = status.enabled ? "已开启" : "未开启";
+  els.autoSwitchBadge.className = `badge ${status.enabled ? "ok" : ""}`;
+  els.autoSwitchToggle.textContent = status.enabled ? "关闭自动切换" : "开启自动切换";
+  els.autoSwitchMeta.innerHTML = `
+    ${detailItem("上次检查", formatDateTime(status.lastCheckedAt) || "未检查")}
+    ${detailItem("上次切换", formatDateTime(status.lastSwitchedAt) || "未切换")}
+    ${detailItem("当前判断", status.lastMessage || "未开启自动切换")}
+  `;
+  if (!status.events?.length) {
+    els.autoSwitchEvents.innerHTML = `<p class="muted auto-switch-empty">还没有自动切换记录。</p>`;
+    return;
+  }
+  els.autoSwitchEvents.innerHTML = status.events
+    .map((event) => {
+      const parts = [event.message];
+      if (event.reason) {
+        parts.push(`原因：${event.reason}`);
+      }
+      return `
+        <article class="auto-switch-event">
+          <header>
+            <strong>${escapeHTML(formatDateTime(event.at) || event.at)}</strong>
+            <span>${escapeHTML(autoSwitchEventLabel(event.type))}</span>
+          </header>
+          <p>${escapeHTML(parts.join(" · "))}</p>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function renderListQuota(profile) {
   if (!profile.cachedProbe) {
     return `
@@ -233,7 +286,7 @@ async function probeProfile(name) {
   await runTask(`probe:${name}`, async () => {
     const result = await api(`/api/profiles/${encodeURIComponent(name)}/probe`, { method: "POST" });
     showToast(`${name}: ${result.reason}`);
-    await loadProfiles();
+    await loadDashboard();
   });
 }
 
@@ -242,7 +295,7 @@ async function refreshAllUsage() {
     const result = await api("/api/usage/refresh", { method: "POST" });
     const failedCount = Object.keys(result.failed || {}).length;
     showToast(`已刷新 ${result.refreshed?.length || 0} 个槽位${failedCount ? `，失败 ${failedCount} 个` : ""}`);
-    await loadProfiles();
+    await loadDashboard();
   });
 }
 
@@ -260,11 +313,41 @@ function maybeAutoRefreshUsage() {
   refreshAllUsage();
 }
 
+async function loadAutoSwitchStatus() {
+  await runTask("auto-switch:load", async () => {
+    state.autoSwitch = await api("/api/auto-switch");
+    renderAutoSwitch();
+  });
+}
+
+async function toggleAutoSwitch() {
+  await runTask("auto-switch:toggle", async () => {
+    const result = await api("/api/auto-switch", {
+      method: "PATCH",
+      body: { enabled: !state.autoSwitch?.enabled },
+    });
+    state.autoSwitch = result.status;
+    renderAutoSwitch();
+    await loadProfiles();
+    showToast(state.autoSwitch.enabled ? "自动切换已开启" : "自动切换已关闭");
+  });
+}
+
+async function runAutoSwitchCheck() {
+  await runTask("auto-switch:run", async () => {
+    const result = await api("/api/auto-switch/run", { method: "POST" });
+    state.autoSwitch = result.status;
+    renderAutoSwitch();
+    await loadProfiles();
+    showToast(result.switched ? state.autoSwitch.lastMessage || "已自动切换账号" : state.autoSwitch.lastMessage || "已完成自动切换检查");
+  });
+}
+
 async function activateProfile(name) {
   await runTask(`activate:${name}`, async () => {
     await api(`/api/profiles/${encodeURIComponent(name)}/activate`, { method: "POST" });
     showToast(`已切换到 ${name}`);
-    await loadProfiles();
+    await loadDashboard();
   });
 }
 
@@ -275,7 +358,7 @@ async function removeProfile(name) {
   await runTask(`remove:${name}`, async () => {
     const result = await api(`/api/profiles/${encodeURIComponent(name)}/remove`, { method: "POST" });
     showToast(result.message || `已移除 ${name}`);
-    await loadProfiles();
+    await loadDashboard();
   });
 }
 
@@ -391,6 +474,37 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function applyProfiles(profiles) {
+  state.profiles = profiles;
+  if (!state.selectedName && state.profiles.length > 0) {
+    state.selectedName = state.profiles.find((profile) => !profile.isDefault)?.name ?? state.profiles[0].name;
+  }
+  if (!state.profiles.some((profile) => profile.name === state.selectedName)) {
+    state.selectedName = state.profiles[0]?.name ?? null;
+  }
+}
+
+function autoSwitchEventLabel(type) {
+  if (type === "switch") return "自动切换";
+  if (type === "enabled") return "已开启";
+  if (type === "disabled") return "已关闭";
+  return "状态";
+}
+
+async function silentRefreshDashboard() {
+  try {
+    const [profiles, autoSwitch] = await Promise.all([
+      api("/api/profiles"),
+      api("/api/auto-switch"),
+    ]);
+    applyProfiles(profiles.profiles ?? []);
+    state.autoSwitch = autoSwitch;
+    render();
+  } catch {
+    // Ignore silent polling errors; manual actions still surface errors.
+  }
 }
 
 function escapeHTML(value) {

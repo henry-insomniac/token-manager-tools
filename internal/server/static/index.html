@@ -43,6 +43,21 @@
         <button class="tool-button tool-button-primary" id="refresh-button" type="button">刷新额度</button>
       </section>
 
+      <section class="auto-switch-panel" aria-label="自动切换">
+        <div class="auto-switch-copy">
+          <p class="eyebrow auto-switch-eyebrow">自动切换</p>
+          <h2>当前账号不可用时，自动切到有额度的账号</h2>
+          <p class="muted">只做兜底切换，不会在健康账号之间来回轮换。</p>
+        </div>
+        <div class="auto-switch-actions">
+          <span class="badge" id="auto-switch-badge">未开启</span>
+          <button class="tool-button" id="auto-switch-toggle" type="button">开启自动切换</button>
+          <button class="tool-button" id="auto-switch-run" type="button">立即检查</button>
+        </div>
+        <div class="auto-switch-meta" id="auto-switch-meta"></div>
+        <div class="auto-switch-events" id="auto-switch-events"></div>
+      </section>
+
       <section class="workspace">
         <div class="profile-list" id="profile-list" aria-live="polite"></div>
         <aside class="detail-panel" id="detail-panel">

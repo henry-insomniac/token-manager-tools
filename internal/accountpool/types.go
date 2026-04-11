@@ -1,6 +1,9 @@
 package accountpool
 
-import "net/http"
+import (
+	"net/http"
+	"sync"
+)
 
 const DefaultProfileName = "default"
 
@@ -37,6 +40,8 @@ type AccountPool struct {
 	httpClient      *http.Client
 	httpClientFixed bool
 	clock           func() int64
+	settingsMu      sync.Mutex
+	autoSwitchMu    sync.Mutex
 }
 
 type ProfileSnapshot struct {
@@ -122,4 +127,31 @@ type ProbeResult struct {
 	Usage        UsageSnapshot `json:"usage"`
 	AccountID    string        `json:"accountId,omitempty"`
 	AccountEmail string        `json:"accountEmail,omitempty"`
+}
+
+type AutoSwitchEvent struct {
+	At      string  `json:"at"`
+	Type    string  `json:"type"`
+	Message string  `json:"message"`
+	From    *string `json:"from,omitempty"`
+	To      *string `json:"to,omitempty"`
+	Reason  *string `json:"reason,omitempty"`
+}
+
+type AutoSwitchStatus struct {
+	Enabled                  bool              `json:"enabled"`
+	PollIntervalMinSeconds   int               `json:"pollIntervalMinSeconds"`
+	PollIntervalMaxSeconds   int               `json:"pollIntervalMaxSeconds"`
+	MinSwitchIntervalSeconds int               `json:"minSwitchIntervalSeconds"`
+	LastCheckedAt            *string           `json:"lastCheckedAt,omitempty"`
+	LastSwitchedAt           *string           `json:"lastSwitchedAt,omitempty"`
+	LastMessage              string            `json:"lastMessage,omitempty"`
+	LastFrom                 *string           `json:"lastFrom,omitempty"`
+	LastTo                   *string           `json:"lastTo,omitempty"`
+	Events                   []AutoSwitchEvent `json:"events,omitempty"`
+}
+
+type AutoSwitchRunResult struct {
+	Switched bool             `json:"switched"`
+	Status   AutoSwitchStatus `json:"status"`
 }

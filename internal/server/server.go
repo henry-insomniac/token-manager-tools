@@ -22,6 +22,7 @@ type LocalServer struct {
 
 	pendingMu sync.Mutex
 	pending   map[string]pendingLoginFlow
+	loopOnce  sync.Once
 }
 
 type pendingLoginFlow struct {
@@ -36,11 +37,14 @@ func NewHandler(pool *accountpool.AccountPool) http.Handler {
 		pool:    pool,
 		pending: map[string]pendingLoginFlow{},
 	}
+	server.startAutoSwitchLoop()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", server.handleIndex)
 	mux.HandleFunc("/app.js", server.handleStatic("app.js", "application/javascript; charset=utf-8"))
 	mux.HandleFunc("/styles.css", server.handleStatic("styles.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("/api/profiles", server.handleProfiles)
+	mux.HandleFunc("/api/auto-switch", server.handleAutoSwitch)
+	mux.HandleFunc("/api/auto-switch/run", server.handleAutoSwitchRun)
 	mux.HandleFunc("/api/usage/refresh", server.handleUsageRefresh)
 	mux.HandleFunc("/api/profiles/", server.handleProfileAction)
 	mux.HandleFunc("/auth/callback", server.handleOAuthCallback)
@@ -98,6 +102,47 @@ func (server *LocalServer) handleProfiles(w http.ResponseWriter, r *http.Request
 	default:
 		writeAPIError(w, fmt.Errorf("不支持的请求方法: %s", r.Method), http.StatusMethodNotAllowed)
 	}
+}
+
+func (server *LocalServer) handleAutoSwitch(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		status, err := server.pool.AutoSwitchStatus()
+		if err != nil {
+			writeAPIError(w, err, http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	case http.MethodPatch:
+		var input struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := decodeJSONBody(r, &input); err != nil {
+			writeAPIError(w, err, http.StatusBadRequest)
+			return
+		}
+		result, err := server.pool.SetAutoSwitchEnabled(input.Enabled)
+		if err != nil {
+			writeAPIError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	default:
+		writeAPIError(w, fmt.Errorf("不支持的请求方法: %s", r.Method), http.StatusMethodNotAllowed)
+	}
+}
+
+func (server *LocalServer) handleAutoSwitchRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, fmt.Errorf("不支持的请求方法: %s", r.Method), http.StatusMethodNotAllowed)
+		return
+	}
+	result, err := server.pool.RunAutoSwitchNow()
+	if err != nil {
+		writeAPIError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (server *LocalServer) handleProfileAction(w http.ResponseWriter, r *http.Request) {
@@ -232,6 +277,22 @@ func (server *LocalServer) handleOAuthCallback(w http.ResponseWriter, r *http.Re
 		label = flow.ProfileName
 	}
 	writeCallbackHTML(w, "登录成功", fmt.Sprintf("%s 已写入本机账号池。可以关闭这个页面。", label))
+}
+
+func (server *LocalServer) startAutoSwitchLoop() {
+	server.loopOnce.Do(func() {
+		go func() {
+			timer := time.NewTimer(accountpool.NextAutoSwitchPollInterval())
+			defer timer.Stop()
+			for range timer.C {
+				if _, err := server.pool.RunAutoSwitchNow(); err != nil {
+					timer.Reset(accountpool.NextAutoSwitchPollInterval())
+					continue
+				}
+				timer.Reset(accountpool.NextAutoSwitchPollInterval())
+			}
+		}()
+	})
 }
 
 func decodeJSONBody(r *http.Request, target any) error {
