@@ -62,9 +62,29 @@ go run ./cmd/token-manager probe acct-a
 go run ./cmd/token-manager activate acct-a
 go run ./cmd/token-manager remove acct-a
 go run ./cmd/token-manager start
+go run ./cmd/token-manager start 18080
 go run ./cmd/token-manager status
 go run ./cmd/token-manager stop
 go run ./cmd/token-manager serve
+```
+
+如果默认 `1455` 端口被占用，可以指定端口启动：
+
+```bash
+# 源码运行
+go run ./cmd/token-manager start 18080
+
+# macOS / Linux 二进制
+./token-manager start 18080
+
+# Windows PowerShell
+.\token-manager.exe start 18080
+```
+
+然后访问：
+
+```text
+http://127.0.0.1:18080/
 ```
 
 环境变量：

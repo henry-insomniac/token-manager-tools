@@ -14,8 +14,20 @@ Windows PowerShell:
 启动后访问：
   http://127.0.0.1:1455/
 
+如果 1455 端口被占用，可以指定端口启动：
+
+macOS / Linux:
+  ./token-manager start 18080
+
+Windows PowerShell:
+  .\token-manager.exe start 18080
+
+然后访问：
+  http://127.0.0.1:18080/
+
 后台服务命令：
   token-manager start     后台启动服务，命令行可以关闭
+  token-manager start 18080  使用指定端口后台启动
   token-manager status    查看服务是否正在后台运行
   token-manager stop      停止后台服务
 
