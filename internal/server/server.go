@@ -41,6 +41,7 @@ func NewHandler(pool *accountpool.AccountPool) http.Handler {
 	mux.HandleFunc("/app.js", server.handleStatic("app.js", "application/javascript; charset=utf-8"))
 	mux.HandleFunc("/styles.css", server.handleStatic("styles.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("/api/profiles", server.handleProfiles)
+	mux.HandleFunc("/api/usage/refresh", server.handleUsageRefresh)
 	mux.HandleFunc("/api/profiles/", server.handleProfileAction)
 	mux.HandleFunc("/auth/callback", server.handleOAuthCallback)
 	return mux
@@ -159,6 +160,34 @@ func (server *LocalServer) handleProfileAction(w http.ResponseWriter, r *http.Re
 	default:
 		writeAPIError(w, fmt.Errorf("未知账号槽位动作: %s", action), http.StatusNotFound)
 	}
+}
+
+func (server *LocalServer) handleUsageRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, fmt.Errorf("不支持的请求方法: %s", r.Method), http.StatusMethodNotAllowed)
+		return
+	}
+	profiles, err := server.pool.ListProfiles()
+	if err != nil {
+		writeAPIError(w, err, http.StatusInternalServerError)
+		return
+	}
+	refreshed := make([]string, 0, len(profiles))
+	failed := map[string]string{}
+	for _, profile := range profiles {
+		if profile.IsDefault || !profile.HasCredential {
+			continue
+		}
+		if _, err := server.pool.ProbeProfile(profile.Name); err != nil {
+			failed[profile.Name] = err.Error()
+			continue
+		}
+		refreshed = append(refreshed, profile.Name)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"refreshed": refreshed,
+		"failed":    failed,
+	})
 }
 
 func (server *LocalServer) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {

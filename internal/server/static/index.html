@@ -18,7 +18,7 @@
           <label for="profile-name">新增槽位</label>
           <div class="create-row">
             <input id="profile-name" name="name" autocomplete="off" placeholder="acct-a" />
-            <button type="submit">创建</button>
+            <button class="tool-button tool-button-primary" type="submit">创建</button>
           </div>
         </form>
       </section>
@@ -29,14 +29,18 @@
           <p>槽位</p>
         </div>
         <div>
-          <span id="summary-healthy">0</span>
-          <p>可用</p>
+          <span id="summary-checked">0</span>
+          <p>已有额度</p>
         </div>
         <div>
-          <span id="summary-attention">0</span>
-          <p>需处理</p>
+          <span id="summary-fivehour-risk">0</span>
+          <p>5 小时风险</p>
         </div>
-        <button id="refresh-button" type="button">刷新</button>
+        <div>
+          <span id="summary-week-risk">0</span>
+          <p>本周风险</p>
+        </div>
+        <button class="tool-button tool-button-primary" id="refresh-button" type="button">刷新额度</button>
       </section>
 
       <section class="workspace">

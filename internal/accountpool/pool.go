@@ -3,7 +3,6 @@ package accountpool
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,10 +41,6 @@ func New(config Config) (*AccountPool, error) {
 	if clock == nil {
 		clock = func() int64 { return time.Now().UnixNano() }
 	}
-	httpClient := config.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
 
 	pool := &AccountPool{
 		homeDir:        homeDir,
@@ -53,14 +48,20 @@ func New(config Config) (*AccountPool, error) {
 		codexHome:      codexHome,
 		managerDir:     managerDir,
 		statePath:      filepath.Join(managerDir, "state.json"),
+		settingsPath:   filepath.Join(managerDir, "settings.json"),
 		defaultOpenDir: defaultOpenDir,
 		defaultCodex:   defaultCodex,
 		authorizeURL:   firstNonEmpty(config.OAuthAuthorizeURL, defaultOAuthAuthorizeURL),
 		tokenURL:       firstNonEmpty(config.OAuthTokenURL, os.Getenv("TOKEN_MANAGER_OAUTH_TOKEN_URL"), defaultOAuthTokenURL),
 		redirectURL:    firstNonEmpty(config.OAuthRedirectURL, os.Getenv("TOKEN_MANAGER_OAUTH_REDIRECT_URL"), defaultOAuthRedirectURL),
 		usageURL:       firstNonEmpty(config.UsageURL, os.Getenv("TOKEN_MANAGER_USAGE_URL"), defaultUsageURL),
-		httpClient:     httpClient,
 		clock:          clock,
+	}
+	if config.HTTPClient != nil {
+		pool.httpClient = config.HTTPClient
+		pool.httpClientFixed = true
+	} else {
+		pool.httpClient = pool.newHTTPClient("")
 	}
 	return pool, ensureDir(managerDir)
 }
@@ -207,6 +208,7 @@ func (pool *AccountPool) profileSnapshot(name, stateDir string, state State) (Pr
 		}
 	}
 	tokens, _ := pool.tokensForProfile(name)
+	cachedProbe, _ := pool.loadCachedProbe(name)
 
 	status := "reauth_required"
 	reason := "未登录"
@@ -219,6 +221,10 @@ func (pool *AccountPool) profileSnapshot(name, stateDir string, state State) (Pr
 	} else if pathExists(filepath.Join(stateDir, "openclaw.json")) || pathExists(authStorePath) {
 		status = "reauth_required"
 		reason = "未找到认证信息"
+	}
+	if cachedProbe != nil && name != DefaultProfileName && (hasCredential || pathExists(codexAuthPath)) {
+		status = cachedProbe.Status
+		reason = cachedProbe.Reason
 	}
 
 	active := state.ActiveProfileName != nil && *state.ActiveProfileName == name
@@ -239,6 +245,7 @@ func (pool *AccountPool) profileSnapshot(name, stateDir string, state State) (Pr
 		AccountEmail:  tokens.Email,
 		Status:        status,
 		StatusReason:  reason,
+		CachedProbe:   cachedProbe,
 	}, nil
 }
 

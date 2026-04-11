@@ -1,5 +1,8 @@
 Token Manager Tools
 
+版本：
+0.1.0-preview.5
+
 用途：
 本工具用于在本机管理 Codex/OpenAI 账号池。它不需要安装 OpenClaw，也不会上传 token。
 

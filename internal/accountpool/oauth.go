@@ -130,7 +130,7 @@ func (pool *AccountPool) postTokenRequest(form url.Values) (tokenPayload, error)
 		return tokenPayload{}, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := pool.httpClient.Do(req)
+	resp, err := pool.doRequest(req)
 	if err != nil {
 		return tokenPayload{}, err
 	}

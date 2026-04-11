@@ -47,7 +47,7 @@ OpenClaw Manager Native 已经有一套 Go daemon 账号池能力：
                        │
 ┌──────────────────────▼───────────────────────┐
 │ Local API                                    │
-│ /api/profiles /api/login /api/settings       │
+│ /api/profiles /api/login /api/usage/refresh  │
 └──────────────────────┬───────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────┐
@@ -206,10 +206,9 @@ GET  /auth/callback
 POST /api/profiles/{name}/probe
 POST /api/profiles/{name}/activate
 POST /api/profiles/{name}/remove
+POST /api/usage/refresh
 POST /api/export
 POST /api/import
-GET  /api/settings
-PATCH /api/settings
 ```
 
 返回对象要避免暴露完整 token。UI 只能看到：
@@ -225,6 +224,7 @@ PATCH /api/settings
 
 OAuth verifier/state 留在本地服务内存，不返回给浏览器 API。
 `serve` 默认只允许 loopback 监听；远程访问必须显式设置 `TOKEN_MANAGER_ALLOW_REMOTE=1`。
+网络连通默认零配置：先尝试直连，再自动尝试环境变量代理和常见本地代理端口。
 
 ## CLI 草案
 

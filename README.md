@@ -2,9 +2,19 @@
 
 Token Manager Tools 是一个跨平台账号池管理工具。
 
+当前版本：`0.1.0-preview.5`
+
 它从 OpenClaw Manager Native 的账号池能力中拆出来，目标是让 Windows、macOS、Linux 用户都能管理本机 Codex/OpenAI 账号池。用户不安装 OpenClaw 也能使用账号池；安装 OpenClaw 后，再启用兼容同步和运行时集成。
 
-当前状态：核心实现阶段。
+当前状态：可分发预览版。
+
+本次预览更新：
+
+- 账号池页面改为更紧凑的关键信息展示，详情放到右侧面板
+- 额度数据接入页面，支持汇总、风险计数和卡片内额度条
+- 移除本机槽位能力已补齐
+- 后台服务支持 `start/status/stop`
+- 网络连通改为零配置：自动尝试直连、环境变量代理和常见本地代理端口
 
 已具备第一批本地能力：
 
@@ -13,6 +23,7 @@ Token Manager Tools 是一个跨平台账号池管理工具。
 - Codex OAuth 登录流程
 - 手动登录兜底模式
 - 保存 OpenClaw/Codex 兼容认证文件
+- 自动尝试直连和常见本地代理端口，不开 TUN 也能检查额度
 - 探测 Codex 额度，access token 失效时自动 refresh 后重试一次
 - 切换默认运行槽位
 - 移除槽位并归档本地资料
@@ -87,6 +98,8 @@ go run ./cmd/token-manager start 18080
 http://127.0.0.1:18080/
 ```
 
+如果你不开 TUN，工具会先尝试直连，再自动尝试常见本地代理端口，例如 `7890`、`7897`、`10809`。用户不需要在页面里手填代理地址。
+
 环境变量：
 
 ```bash
@@ -99,6 +112,12 @@ TOKEN_MANAGER_LOGIN_MODE=manual
 TOKEN_MANAGER_SERVER_ADDR=127.0.0.1:1455
 TOKEN_MANAGER_SERVER_NO_OPEN=1
 TOKEN_MANAGER_ALLOW_REMOTE=1
+```
+
+如果你的环境本来就通过环境变量提供代理，工具也会自动继承：
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 ./token-manager start
 ```
 
 ## 文档

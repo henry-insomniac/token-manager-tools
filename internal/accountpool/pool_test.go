@@ -59,6 +59,19 @@ func TestNewUsesEnvironmentRootOverrides(t *testing.T) {
 	}
 }
 
+func TestRememberWorkingProxyPersistsCache(t *testing.T) {
+	pool := newTestPool(t)
+	pool.rememberWorkingProxy("http://127.0.0.1:7890")
+	if got := pool.cachedProxyURL(); got != "http://127.0.0.1:7890" {
+		t.Fatalf("unexpected cached proxy: %q", got)
+	}
+
+	pool.rememberWorkingProxy("")
+	if got := pool.cachedProxyURL(); got != "" {
+		t.Fatalf("expected cached proxy to clear, got %q", got)
+	}
+}
+
 func TestRemoveProfileArchivesAndDoesNotRediscover(t *testing.T) {
 	pool := newTestPool(t)
 	profile, err := pool.CreateProfile("acct-g")

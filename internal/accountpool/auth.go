@@ -1,6 +1,7 @@
 package accountpool
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -114,10 +115,69 @@ func upsertCodexCredential(store *AuthStore, profileID string, tokens OAuthToken
 		store.Profiles[profileID]["id_token"] = tokens.IDToken
 	}
 	store.LastGood["openai-codex"] = profileID
-	store.UsageStats[profileID] = map[string]any{
-		"errorCount": 0,
-		"lastUsed":   time.Now().UnixMilli(),
+	stats := cloneAnyMap(store.UsageStats[profileID])
+	if stats == nil {
+		stats = map[string]any{}
 	}
+	stats["errorCount"] = 0
+	stats["lastUsed"] = time.Now().UnixMilli()
+	store.UsageStats[profileID] = stats
+}
+
+func (pool *AccountPool) loadCachedProbe(profileName string) (*CachedProbeSnapshot, error) {
+	store, err := pool.loadAuthStore(profileName)
+	if err != nil {
+		return nil, err
+	}
+	profileID := pickCodexProfileID(store)
+	if profileID == nil {
+		return nil, nil
+	}
+	stats := store.UsageStats[*profileID]
+	if len(stats) == 0 {
+		return nil, nil
+	}
+	raw := stats["quotaCache"]
+	if raw == nil {
+		return nil, nil
+	}
+	buffer, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var cached CachedProbeSnapshot
+	if err := json.Unmarshal(buffer, &cached); err != nil {
+		return nil, err
+	}
+	if cached.Status == "" {
+		return nil, nil
+	}
+	return &cached, nil
+}
+
+func (pool *AccountPool) saveCachedProbe(profileName string, result ProbeResult) error {
+	store, err := pool.loadAuthStore(profileName)
+	if err != nil {
+		return err
+	}
+	profileID := pickCodexProfileID(store)
+	if profileID == nil {
+		return errors.New("未找到可写入额度缓存的 Codex 认证")
+	}
+	stats := cloneAnyMap(store.UsageStats[*profileID])
+	if stats == nil {
+		stats = map[string]any{}
+	}
+	stats["errorCount"] = 0
+	stats["lastUsed"] = time.Now().UnixMilli()
+	stats["quotaCache"] = map[string]any{
+		"status":      result.Status,
+		"reason":      result.Reason,
+		"usage":       result.Usage,
+		"lastProbeAt": pool.now().UTC().Format(time.RFC3339),
+	}
+	store.UsageStats[*profileID] = stats
+	return pool.saveAuthStore(profileName, store)
 }
 
 func (pool *AccountPool) saveCodexAuth(profileName string, tokens OAuthTokens) error {

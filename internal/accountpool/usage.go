@@ -57,14 +57,18 @@ func (pool *AccountPool) ProbeProfile(rawName string) (ProbeResult, error) {
 		return ProbeResult{}, err
 	}
 	status, reason := classifyUsage(usage)
-	return ProbeResult{
+	result := ProbeResult{
 		ProfileName:  name,
 		Status:       status,
 		Reason:       reason,
 		Usage:        usage,
 		AccountID:    tokens.AccountID,
 		AccountEmail: tokens.Email,
-	}, nil
+	}
+	if err := pool.saveCachedProbe(name, result); err != nil {
+		return ProbeResult{}, err
+	}
+	return result, nil
 }
 
 func (pool *AccountPool) FetchUsage(tokens OAuthTokens) (UsageSnapshot, error) {
@@ -80,7 +84,7 @@ func (pool *AccountPool) FetchUsage(tokens OAuthTokens) (UsageSnapshot, error) {
 	if strings.TrimSpace(tokens.AccountID) != "" {
 		req.Header.Set("ChatGPT-Account-Id", tokens.AccountID)
 	}
-	resp, err := pool.httpClient.Do(req)
+	resp, err := pool.doRequest(req)
 	if err != nil {
 		return UsageSnapshot{}, err
 	}

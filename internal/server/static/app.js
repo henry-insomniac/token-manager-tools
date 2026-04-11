@@ -2,6 +2,7 @@ const state = {
   profiles: [],
   selectedName: null,
   busy: new Set(),
+  autoRefreshStarted: false,
 };
 
 const els = {
@@ -12,8 +13,9 @@ const els = {
   input: document.querySelector("#profile-name"),
   refresh: document.querySelector("#refresh-button"),
   total: document.querySelector("#summary-total"),
-  healthy: document.querySelector("#summary-healthy"),
-  attention: document.querySelector("#summary-attention"),
+  checked: document.querySelector("#summary-checked"),
+  fiveHourRisk: document.querySelector("#summary-fivehour-risk"),
+  weekRisk: document.querySelector("#summary-week-risk"),
 };
 
 els.form.addEventListener("submit", async (event) => {
@@ -31,7 +33,7 @@ els.form.addEventListener("submit", async (event) => {
   });
 });
 
-els.refresh.addEventListener("click", () => loadProfiles());
+els.refresh.addEventListener("click", () => refreshAllUsage());
 
 loadProfiles();
 
@@ -46,6 +48,7 @@ async function loadProfiles() {
       state.selectedName = state.profiles[0]?.name ?? null;
     }
     render();
+    maybeAutoRefreshUsage();
   });
 }
 
@@ -58,8 +61,9 @@ function render() {
 function renderSummary() {
   const managed = state.profiles.filter((profile) => !profile.isDefault);
   els.total.textContent = managed.length;
-  els.healthy.textContent = managed.filter((profile) => profile.status === "healthy").length;
-  els.attention.textContent = managed.filter((profile) => profile.status !== "healthy").length;
+  els.checked.textContent = managed.filter((profile) => profile.cachedProbe).length;
+  els.fiveHourRisk.textContent = managed.filter((profile) => isFiveHourRisk(profile)).length;
+  els.weekRisk.textContent = managed.filter((profile) => isWeekRisk(profile)).length;
 }
 
 function renderList() {
@@ -77,12 +81,20 @@ function renderList() {
 }
 
 function renderProfileRow(profile) {
-  const row = document.createElement("button");
-  row.type = "button";
+  const row = document.createElement("article");
   row.className = `profile-row ${profile.name === state.selectedName ? "is-selected" : ""}`;
+  row.tabIndex = 0;
+  row.setAttribute("role", "button");
   row.addEventListener("click", () => {
     state.selectedName = profile.name;
     render();
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      state.selectedName = profile.name;
+      render();
+    }
   });
 
   const main = document.createElement("div");
@@ -94,6 +106,7 @@ function renderProfileRow(profile) {
       ${profile.isActive ? '<span class="badge ok">当前</span>' : ""}
     </p>
     <p class="profile-meta">${escapeHTML(profile.accountEmail || profile.accountId || profile.statusReason || "未登录")}</p>
+    ${renderListQuota(profile)}
   `;
 
   const actions = document.createElement("div");
@@ -122,13 +135,63 @@ function renderDetail() {
   els.detail.innerHTML = `
     <h2>${escapeHTML(profile.name)}</h2>
     <p class="muted">${escapeHTML(profile.statusReason || "未提供状态原因")}</p>
+    ${renderDetailUsage(profile)}
     <div class="detail-grid">
       ${detailItem("账号", profile.accountEmail || profile.accountId || "未登录")}
+      ${detailItem("套餐", profile.cachedProbe?.usage?.plan || "未提供")}
+      ${detailItem("上次检查", formatDateTime(profile.cachedProbe?.lastProbeAt) || "未检查")}
       ${detailItem("状态目录", profile.stateDir)}
       ${detailItem("Codex 目录", profile.codexHome)}
       ${detailItem("OpenClaw 配置", profile.configPath)}
       ${detailItem("认证池", profile.authStorePath)}
       ${detailItem("Codex 认证", profile.codexAuthPath)}
+    </div>
+  `;
+}
+
+function renderListQuota(profile) {
+  if (!profile.cachedProbe) {
+    return `
+      <div class="quota-row">
+        <div class="quota-chip">
+          <header><strong>额度</strong><span>未检查</span></header>
+          <div class="quota-bar"><i style="width: 0%"></i></div>
+          <p class="quota-note">点“检查”或“刷新额度”后显示。</p>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="quota-row">
+      ${quotaChip("5 小时", profile.cachedProbe.usage?.fiveHour)}
+      ${quotaChip("本周", profile.cachedProbe.usage?.week)}
+    </div>
+  `;
+}
+
+function renderDetailUsage(profile) {
+  if (!profile.cachedProbe) {
+    return `
+      <div class="detail-usage">
+        <div class="detail-usage-card">
+          <header><strong>额度概览</strong><span>未检查</span></header>
+          <p class="muted">点击“检查”或顶部“刷新额度”后，会显示 5 小时和本周余量。</p>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="detail-usage">
+      <div class="detail-usage-card">
+        <header><strong>5 小时额度</strong><span>${usagePercentLabel(profile.cachedProbe.usage?.fiveHour)}</span></header>
+        ${usageBar(profile.cachedProbe.usage?.fiveHour)}
+        <p class="quota-note">${quotaResetLabel(profile.cachedProbe.usage?.fiveHour)}</p>
+      </div>
+      <div class="detail-usage-card">
+        <header><strong>本周额度</strong><span>${usagePercentLabel(profile.cachedProbe.usage?.week)}</span></header>
+        ${usageBar(profile.cachedProbe.usage?.week)}
+        <p class="quota-note">${quotaResetLabel(profile.cachedProbe.usage?.week)}</p>
+      </div>
     </div>
   `;
 }
@@ -146,7 +209,7 @@ function actionButton(label, handler, disabled = false, variant = "") {
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = label;
-  button.className = variant;
+  button.className = `profile-action ${variant}`.trim();
   button.disabled = disabled;
   button.addEventListener("click", handler);
   return button;
@@ -172,6 +235,29 @@ async function probeProfile(name) {
     showToast(`${name}: ${result.reason}`);
     await loadProfiles();
   });
+}
+
+async function refreshAllUsage() {
+  await runTask("refresh-usage", async () => {
+    const result = await api("/api/usage/refresh", { method: "POST" });
+    const failedCount = Object.keys(result.failed || {}).length;
+    showToast(`已刷新 ${result.refreshed?.length || 0} 个槽位${failedCount ? `，失败 ${failedCount} 个` : ""}`);
+    await loadProfiles();
+  });
+}
+
+function maybeAutoRefreshUsage() {
+  if (state.autoRefreshStarted) {
+    return;
+  }
+  const managed = state.profiles.filter((profile) => !profile.isDefault);
+  const hasCredentialedProfile = managed.some((profile) => profile.hasCredential);
+  const hasCachedProbe = managed.some((profile) => profile.cachedProbe);
+  if (!hasCredentialedProfile || hasCachedProbe) {
+    return;
+  }
+  state.autoRefreshStarted = true;
+  refreshAllUsage();
 }
 
 async function activateProfile(name) {
@@ -248,6 +334,63 @@ function badgeClass(profile) {
   if (profile.status === "reauth_required" || profile.status === "cooldown") return "warn";
   if (profile.status === "exhausted") return "danger";
   return "";
+}
+
+function quotaChip(label, window) {
+  return `
+    <div class="quota-chip">
+      <header><strong>${escapeHTML(label)}</strong><span>${usagePercentLabel(window)}</span></header>
+      ${usageBar(window)}
+      <p class="quota-note">${quotaResetLabel(window)}</p>
+    </div>
+  `;
+}
+
+function usageBar(window) {
+  const left = Math.max(0, Math.min(100, window?.leftPercent ?? 0));
+  return `<div class="quota-bar ${barClass(left)}"><i style="width: ${left}%"></i></div>`;
+}
+
+function usagePercentLabel(window) {
+  if (!window) return "未提供";
+  return `剩余 ${window.leftPercent}%`;
+}
+
+function quotaResetLabel(window) {
+  if (!window) return "未提供额度窗口";
+  if (window.resetAt) {
+    return `重置时间 ${formatDateTime(window.resetAt) || window.resetAt}`;
+  }
+  return "未提供重置时间";
+}
+
+function barClass(leftPercent) {
+  if (leftPercent <= 0) return "is-danger";
+  if (leftPercent <= 20) return "is-danger";
+  if (leftPercent <= 40) return "is-warn";
+  return "";
+}
+
+function isFiveHourRisk(profile) {
+  const left = profile.cachedProbe?.usage?.fiveHour?.leftPercent;
+  return typeof left === "number" && left <= 20;
+}
+
+function isWeekRisk(profile) {
+  const left = profile.cachedProbe?.usage?.week?.leftPercent;
+  return typeof left === "number" && left <= 20;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function escapeHTML(value) {

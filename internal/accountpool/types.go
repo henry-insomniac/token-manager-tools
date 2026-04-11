@@ -22,38 +22,41 @@ type Config struct {
 }
 
 type AccountPool struct {
-	homeDir        string
-	openClawHome   string
-	codexHome      string
-	managerDir     string
-	statePath      string
-	defaultOpenDir string
-	defaultCodex   string
-	authorizeURL   string
-	tokenURL       string
-	redirectURL    string
-	usageURL       string
-	httpClient     *http.Client
-	clock          func() int64
+	homeDir         string
+	openClawHome    string
+	codexHome       string
+	managerDir      string
+	statePath       string
+	settingsPath    string
+	defaultOpenDir  string
+	defaultCodex    string
+	authorizeURL    string
+	tokenURL        string
+	redirectURL     string
+	usageURL        string
+	httpClient      *http.Client
+	httpClientFixed bool
+	clock           func() int64
 }
 
 type ProfileSnapshot struct {
-	Name          string `json:"name"`
-	IsDefault     bool   `json:"isDefault"`
-	IsActive      bool   `json:"isActive"`
-	StateDir      string `json:"stateDir"`
-	CodexHome     string `json:"codexHome"`
-	ConfigPath    string `json:"configPath"`
-	AuthStorePath string `json:"authStorePath"`
-	CodexAuthPath string `json:"codexAuthPath"`
-	HasConfig     bool   `json:"hasConfig"`
-	HasAuthStore  bool   `json:"hasAuthStore"`
-	HasCodexAuth  bool   `json:"hasCodexAuth"`
-	HasCredential bool   `json:"hasCredential"`
-	AccountID     string `json:"accountId,omitempty"`
-	AccountEmail  string `json:"accountEmail,omitempty"`
-	Status        string `json:"status"`
-	StatusReason  string `json:"statusReason"`
+	Name          string               `json:"name"`
+	IsDefault     bool                 `json:"isDefault"`
+	IsActive      bool                 `json:"isActive"`
+	StateDir      string               `json:"stateDir"`
+	CodexHome     string               `json:"codexHome"`
+	ConfigPath    string               `json:"configPath"`
+	AuthStorePath string               `json:"authStorePath"`
+	CodexAuthPath string               `json:"codexAuthPath"`
+	HasConfig     bool                 `json:"hasConfig"`
+	HasAuthStore  bool                 `json:"hasAuthStore"`
+	HasCodexAuth  bool                 `json:"hasCodexAuth"`
+	HasCredential bool                 `json:"hasCredential"`
+	AccountID     string               `json:"accountId,omitempty"`
+	AccountEmail  string               `json:"accountEmail,omitempty"`
+	Status        string               `json:"status"`
+	StatusReason  string               `json:"statusReason"`
+	CachedProbe   *CachedProbeSnapshot `json:"cachedProbe,omitempty"`
 }
 
 type RemoveResult struct {
@@ -103,6 +106,13 @@ type UsageSnapshot struct {
 	Plan     *string      `json:"plan,omitempty"`
 	FiveHour *UsageWindow `json:"fiveHour,omitempty"`
 	Week     *UsageWindow `json:"week,omitempty"`
+}
+
+type CachedProbeSnapshot struct {
+	Status      string        `json:"status"`
+	Reason      string        `json:"reason"`
+	Usage       UsageSnapshot `json:"usage"`
+	LastProbeAt *string       `json:"lastProbeAt,omitempty"`
 }
 
 type ProbeResult struct {

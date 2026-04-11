@@ -3,6 +3,7 @@ package accountpool
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -144,6 +145,21 @@ func TestProbeProfileFetchesUsage(t *testing.T) {
 	if result.Usage.Week == nil || result.Usage.Week.LeftPercent != 40 {
 		t.Fatalf("unexpected week usage: %#v", result.Usage.Week)
 	}
+
+	profiles, err := pool.ListProfiles()
+	if err != nil {
+		t.Fatalf("ListProfiles: %v", err)
+	}
+	var found ProfileSnapshot
+	for _, profile := range profiles {
+		if profile.Name == "acct-probe" {
+			found = profile
+			break
+		}
+	}
+	if found.CachedProbe == nil || found.CachedProbe.Usage.FiveHour == nil || found.CachedProbe.Usage.FiveHour.LeftPercent != 75 {
+		t.Fatalf("cached usage missing from profile snapshot: %#v", found)
+	}
 }
 
 func TestProbeProfileRefreshesExpiredAccessToken(t *testing.T) {
@@ -230,6 +246,85 @@ func TestProbeProfileRefreshesExpiredAccessToken(t *testing.T) {
 	if tokens.Access != newAccessToken || tokens.Refresh != "refresh-old" || tokens.IDToken != "id-old" {
 		t.Fatalf("refreshed tokens not persisted correctly: %#v", tokens)
 	}
+}
+
+func TestProbeProfileAutoDetectsLoopbackProxy(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "")
+	t.Setenv("http_proxy", "")
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("https_proxy", "")
+
+	accessToken := fakeAccessToken(t, "acct-proxy-id", "proxy@example.com")
+	listener := listenOnLoopbackProxyCandidate(t)
+	defer listener.Close()
+
+	proxyHits := 0
+	proxyServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHits++
+		if got := r.Header.Get("Authorization"); got != "Bearer "+accessToken {
+			t.Fatalf("unexpected auth header via proxy: %s", got)
+		}
+		writeJSONResponse(t, w, map[string]any{
+			"plan_type": "plus",
+			"rate_limit": map[string]any{
+				"primary_window": map[string]any{
+					"used_percent": 5,
+				},
+			},
+		})
+	})}
+	go proxyServer.Serve(listener)
+	defer proxyServer.Close()
+
+	pool := newTestPoolWithConfig(t, Config{
+		UsageURL: "http://chatgpt.test/backend-api/wham/usage",
+	})
+	if _, err := pool.CreateProfile("acct-proxy"); err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	if err := pool.PersistTokens("acct-proxy", OAuthTokens{
+		Access:    accessToken,
+		Refresh:   "refresh",
+		IDToken:   "id-token",
+		Expires:   1893456000000,
+		AccountID: "acct-proxy-id",
+		Email:     "proxy@example.com",
+	}); err != nil {
+		t.Fatalf("PersistTokens: %v", err)
+	}
+
+	result, err := pool.ProbeProfile("acct-proxy")
+	if err != nil {
+		t.Fatalf("ProbeProfile: %v", err)
+	}
+	if proxyHits != 1 {
+		t.Fatalf("expected request to go through proxy, hits=%d", proxyHits)
+	}
+	if got := pool.cachedProxyURL(); got != "http://"+listener.Addr().String() {
+		t.Fatalf("expected detected proxy to be cached, got %q", got)
+	}
+	if result.Usage.FiveHour == nil || result.Usage.FiveHour.LeftPercent != 95 {
+		t.Fatalf("unexpected proxied usage: %#v", result.Usage.FiveHour)
+	}
+}
+
+func listenOnLoopbackProxyCandidate(t *testing.T) net.Listener {
+	t.Helper()
+	for _, candidate := range commonLoopbackProxyCandidates() {
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed.Host == "" {
+			continue
+		}
+		if !strings.HasPrefix(parsed.Host, "127.0.0.1:") {
+			continue
+		}
+		listener, err := net.Listen("tcp", parsed.Host)
+		if err == nil {
+			return listener
+		}
+	}
+	t.Fatal("no free loopback proxy candidate port")
+	return nil
 }
 
 func newTestPoolWithConfig(t *testing.T, config Config) *AccountPool {
