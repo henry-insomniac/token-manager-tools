@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Token Manager Tools</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="masthead">
+        <div>
+          <p class="eyebrow">本机账号池</p>
+          <h1>Token Manager</h1>
+          <p class="lede">管理 Codex/OpenAI 本机槽位。不会删除远端账号，不上传 token。</p>
+        </div>
+        <form class="create-form" id="create-form">
+          <label for="profile-name">新增槽位</label>
+          <div class="create-row">
+            <input id="profile-name" name="name" autocomplete="off" placeholder="acct-a" />
+            <button type="submit">创建</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="summary-strip" aria-label="账号池摘要">
+        <div>
+          <span id="summary-total">0</span>
+          <p>槽位</p>
+        </div>
+        <div>
+          <span id="summary-healthy">0</span>
+          <p>可用</p>
+        </div>
+        <div>
+          <span id="summary-attention">0</span>
+          <p>需处理</p>
+        </div>
+        <button id="refresh-button" type="button">刷新</button>
+      </section>
+
+      <section class="workspace">
+        <div class="profile-list" id="profile-list" aria-live="polite"></div>
+        <aside class="detail-panel" id="detail-panel">
+          <p class="empty-title">选择一个槽位</p>
+          <p class="muted">左侧只保留关键信息。路径、认证文件和错误细节会显示在这里。</p>
+        </aside>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
