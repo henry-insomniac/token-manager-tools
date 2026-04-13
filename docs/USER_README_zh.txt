@@ -1,7 +1,7 @@
 Token Manager Tools
 
 版本：
-0.1.0-preview.9
+0.1.0-preview.10
 
 用途：
 本工具用于在本机管理 Codex/OpenAI 账号池。它不需要安装 OpenClaw，也不会上传 token。
@@ -15,7 +15,7 @@ Windows PowerShell:
   .\token-manager.exe start
 
 启动后访问：
-  http://127.0.0.1:1455/
+  http://localhost:1455/
 
 如果 1455 端口被占用，可以指定端口启动：
 
@@ -26,7 +26,7 @@ Windows PowerShell:
   .\token-manager.exe start 18080
 
 然后访问：
-  http://127.0.0.1:18080/
+  http://localhost:18080/
 
 后台服务命令：
   token-manager start     后台启动服务，命令行可以关闭
@@ -35,9 +35,9 @@ Windows PowerShell:
   token-manager stop      停止后台服务
 
 更新说明：
-  这版给浏览器账号池页面补了“登录辅助”面板。
-  如果登录页打不开，或者 OpenAI 身份验证页报 unknown_error，可以直接重开登录页、复制链接，或切到当前页继续登录。
-  登录完成后，页面会自动回到账号池；如果没自动完成，也可以把最终回调地址或 code 粘贴回来写入本机槽位。
+  这版修复了浏览器 OAuth 已登录但回调页空白、报 ERR_EMPTY_RESPONSE 的问题。
+  本地服务现在会同时接住 127.0.0.1 和 localhost 回调，浏览器入口也统一显示 localhost。
+  如果回调端口已经被别的程序占用，工具会直接提示你换一个端口启动。
 
 常用账号池命令：
   token-manager list

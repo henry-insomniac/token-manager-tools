@@ -2,7 +2,7 @@
 
 Token Manager Tools 是一个跨平台账号池管理工具。
 
-当前版本：`0.1.0-preview.9`
+当前版本：`0.1.0-preview.10`
 
 它从 OpenClaw Manager Native 的账号池能力中拆出来，目标是让 Windows、macOS、Linux 用户都能管理本机 Codex/OpenAI 账号池。用户不安装 OpenClaw 也能使用账号池；安装 OpenClaw 后，再启用兼容同步和运行时集成。
 
@@ -10,10 +10,10 @@ Token Manager Tools 是一个跨平台账号池管理工具。
 
 本次预览更新：
 
-- Web UI 登录增加“登录辅助”面板，可直接重开登录页、当前页打开或复制登录链接
-- Web UI 支持粘贴最终回调地址或 `code` 完成本机写入，不再只依赖弹窗回调
-- `/auth/callback` 登录完成后会自动写回账号池页面并自动返回，不需要手动刷新
-- 针对 OpenAI 身份验证页 `unknown_error`，页面补充了可操作提示，便于切换到系统浏览器继续登录
+- 修复浏览器 OAuth 已登录但回调页出现 `ERR_EMPTY_RESPONSE` 的问题
+- `serve/start` 启动的本地服务现在同时接收 `127.0.0.1` 和 `localhost` 回调，避免 loopback host 不一致
+- 浏览器入口、回调示例和分发包启动提示统一改成 `http://localhost:<端口>/`
+- 如果回调端口已被其他程序占用，会直接提示改用其他端口启动
 
 已具备第一批本地能力：
 
@@ -95,7 +95,7 @@ go run ./cmd/token-manager start 18080
 然后访问：
 
 ```text
-http://127.0.0.1:18080/
+http://localhost:18080/
 ```
 
 如果你是用新版本替换旧版本，直接执行当前包里的 `start` 即可。工具会自动停止之前运行中的旧后台服务，并切换到当前版本，不需要手动先停旧版本。

@@ -17,7 +17,7 @@ const (
 	defaultOAuthClientID     = "app_EMoamEEZ73f0CkXaXp7hrann"
 	defaultOAuthAuthorizeURL = "https://auth.openai.com/oauth/authorize"
 	defaultOAuthTokenURL     = "https://auth.openai.com/oauth/token"
-	defaultOAuthScope        = "openid profile email offline_access"
+	defaultOAuthScope        = "openid profile email offline_access api.connectors.read api.connectors.invoke"
 	defaultOAuthRedirectURL  = "http://localhost:1455/auth/callback"
 	defaultUsageURL          = "https://chatgpt.com/backend-api/wham/usage"
 	openAIAuthClaim          = "https://api.openai.com/auth"

@@ -62,6 +62,7 @@ remove/archive
 
 - 已用 `httptest` 覆盖 authorization URL、token exchange、token 持久化。
 - 已覆盖手动登录输入解析、state 校验和 raw code 兜底。
+- 已覆盖 loopback 回调地址和浏览器入口统一为 `localhost` 的生成逻辑。
 - 尚未覆盖 CLI callback server 端到端。
 
 ### Quota

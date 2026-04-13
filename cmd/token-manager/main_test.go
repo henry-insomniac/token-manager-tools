@@ -63,6 +63,30 @@ func TestParseServeArgsRejectsRemoteHostByDefault(t *testing.T) {
 	}
 }
 
+func TestOAuthRedirectURLForAddrPrefersLocalhostForLoopback(t *testing.T) {
+	if got := oauthRedirectURLForAddr("127.0.0.1:1455"); got != "http://localhost:1455/auth/callback" {
+		t.Fatalf("unexpected redirect for loopback IPv4: %s", got)
+	}
+	if got := oauthRedirectURLForAddr("[::1]:1666"); got != "http://localhost:1666/auth/callback" {
+		t.Fatalf("unexpected redirect for loopback IPv6: %s", got)
+	}
+	if got := oauthRedirectURLForAddr("localhost:18080"); got != "http://localhost:18080/auth/callback" {
+		t.Fatalf("unexpected redirect for localhost: %s", got)
+	}
+}
+
+func TestBrowserURLForAddrPrefersLocalhostForLoopback(t *testing.T) {
+	if got := browserURLForAddr("127.0.0.1:1455"); got != "http://localhost:1455/" {
+		t.Fatalf("unexpected browser url for loopback IPv4: %s", got)
+	}
+	if got := browserURLForAddr("[::1]:1666"); got != "http://localhost:1666/" {
+		t.Fatalf("unexpected browser url for loopback IPv6: %s", got)
+	}
+	if got := browserURLForAddr("localhost:18080"); got != "http://localhost:18080/" {
+		t.Fatalf("unexpected browser url for localhost: %s", got)
+	}
+}
+
 func TestShouldReplaceExistingServer(t *testing.T) {
 	currentExec := "/tmp/token-manager-new"
 	addr := "127.0.0.1:1455"

@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/henry-insomniac/token-manager-tools/internal/accountpool"
@@ -152,7 +153,7 @@ func runServe(args []string) error {
 	}
 	config := accountpool.Config{}
 	if strings.TrimSpace(os.Getenv("TOKEN_MANAGER_OAUTH_REDIRECT_URL")) == "" {
-		config.OAuthRedirectURL = "http://" + callbackHostForAddr(addr) + "/auth/callback"
+		config.OAuthRedirectURL = oauthRedirectURLForAddr(addr)
 	}
 	pool, err := accountpool.New(config)
 	if err != nil {
@@ -218,33 +219,45 @@ func validateListenHost(host string) error {
 }
 
 func serveProfiles(pool *accountpool.AccountPool, addr string, openBrowser bool) error {
-	listener, err := net.Listen("tcp", addr)
+	listeners, err := listenLoopbackAddrs(addr)
 	if err != nil {
 		return err
 	}
-	defer listener.Close()
+	for _, listener := range listeners {
+		defer listener.Close()
+	}
 
-	uiURL := browserURLForListener(listener.Addr())
+	uiURL := browserURLForAddr(addr)
 	fmt.Printf("账号池服务已启动: %s\n", uiURL)
 	if openBrowser {
 		if err := platform.OpenBrowser(uiURL); err != nil {
 			fmt.Printf("自动打开浏览器失败，请手动访问上面的地址。原因: %v\n", err)
 		}
 	}
-	server := &http.Server{
-		Handler:           localserver.NewHandler(pool),
-		ReadHeaderTimeout: 10 * time.Second,
+	handler := localserver.NewHandler(pool)
+	errCh := make(chan error, len(listeners))
+	for _, listener := range listeners {
+		server := &http.Server{
+			Handler:           handler,
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		go func(listener net.Listener) {
+			if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- err
+			}
+		}(listener)
 	}
-	return server.Serve(listener)
+	return <-errCh
 }
 
-func browserURLForListener(addr net.Addr) string {
-	host, port, err := net.SplitHostPort(addr.String())
+func browserURLForAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "http://" + addr.String() + "/"
+		return "http://localhost:1455/"
 	}
-	if host == "" || host == "::" || host == "0.0.0.0" {
-		host = "127.0.0.1"
+	switch strings.Trim(host, "[]") {
+	case "", "localhost", "127.0.0.1", "::1":
+		host = "localhost"
 	}
 	return "http://" + net.JoinHostPort(host, port) + "/"
 }
@@ -258,6 +271,74 @@ func callbackHostForAddr(addr string) string {
 		host = "127.0.0.1"
 	}
 	return net.JoinHostPort(host, port)
+}
+
+func oauthRedirectURLForAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://localhost:1455/auth/callback"
+	}
+	switch strings.Trim(host, "[]") {
+	case "", "localhost", "127.0.0.1", "::1":
+		host = "localhost"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/auth/callback"
+}
+
+func listenLoopbackAddrs(addr string) ([]net.Listener, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	host = strings.Trim(host, "[]")
+	if host != "" && host != "localhost" {
+		if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+			listener, err := net.Listen("tcp", addr)
+			if err != nil {
+				return nil, err
+			}
+			return []net.Listener{listener}, nil
+		}
+	}
+
+	candidates := []string{
+		net.JoinHostPort("127.0.0.1", port),
+		net.JoinHostPort("::1", port),
+	}
+	if host == "::1" {
+		candidates[0], candidates[1] = candidates[1], candidates[0]
+	}
+
+	listeners := make([]net.Listener, 0, len(candidates))
+	seen := map[string]struct{}{}
+	for index, candidate := range candidates {
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		listener, err := net.Listen("tcp", candidate)
+		if err != nil {
+			if index == 0 {
+				return nil, err
+			}
+			if isAddrInUse(err) {
+				for _, listener := range listeners {
+					listener.Close()
+				}
+				return nil, fmt.Errorf("本机已有程序占用了 %s，导致 localhost 回调会串到别的服务；请改用其他端口，例如 token-manager serve 18080", candidate)
+			}
+			continue
+		}
+		listeners = append(listeners, listener)
+	}
+	if len(listeners) == 0 {
+		return nil, fmt.Errorf("监听地址无效: %s", addr)
+	}
+	return listeners, nil
+}
+
+func isAddrInUse(err error) bool {
+	return errors.Is(err, syscall.EADDRINUSE)
 }
 
 func firstNonEmpty(values ...string) string {
