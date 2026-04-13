@@ -13,7 +13,8 @@ Token Manager Tools 是一个跨平台账号池管理工具。
 - 新增桌面客户端预览分发包，macOS 压缩包内提供 `Token Manager Tools.app`，Windows 压缩包内提供 `token-manager-desktop.exe`
 - 新增应用图标资源和跨平台 release 打包脚本，分发包统一附带图标、启动脚本和 `SHA256SUMS.txt`
 - 抽离 `internal/appservice` 和前端 transport 适配层，Web 与桌面客户端复用同一套账号池逻辑
-- 桌面客户端登录继续使用系统浏览器，callback 端口会自动避让，不再和 `token-manager start/serve` 默认 `1455` 冲突
+- 桌面客户端登录继续使用系统浏览器，OAuth 回调统一固定为 `http://localhost:1455/auth/callback`
+- 如果桌面登录回调端口 `1455` 已被占用，客户端会直接提示先关闭 `token-manager start/serve` 或其他占用程序
 - 桌面客户端支持关闭后隐藏、单实例唤回、开机启动，以及窗口内快捷操作区
 
 桌面客户端进度：

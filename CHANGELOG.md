@@ -4,6 +4,8 @@
 
 发布日期：2026-04-13
 
+- 桌面客户端 OAuth 回调地址改回固定 `http://localhost:1455/auth/callback`，修复随机回调端口触发 OpenAI `unknown_error` 的问题
+- 如果桌面登录回调端口 `1455` 已被占用，客户端现在会直接提示明确错误，不再继续打开错误的授权页
 - macOS 分发包补做 `.app` bundle 签名，修复 Finder 提示“已损坏，无法打开”的问题
 - 新增桌面客户端预览分发包：macOS 压缩包内提供 `Token Manager Tools.app`，Windows 压缩包内提供 `token-manager-desktop.exe`
 - 新增应用图标资源和跨平台 release 打包脚本，分发包统一附带启动脚本、图标文件和 `SHA256SUMS.txt`

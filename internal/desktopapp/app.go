@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/henry-insomniac/token-manager-tools/internal/accountpool"
@@ -24,7 +26,7 @@ const (
 	LoginResultEvent    = "token-manager-login-result"
 	DesktopActionEvent  = "token-manager-desktop-action"
 	FocusProfileEvent   = "token-manager-focus-profile"
-	defaultCallbackAddr = "127.0.0.1:0"
+	defaultCallbackAddr = "127.0.0.1:1455"
 )
 
 type App struct {
@@ -35,7 +37,7 @@ type App struct {
 	ctx              context.Context
 	callbackAddr     string
 	redirectURLFixed bool
-	callbackOnce     sync.Once
+	callbackMu       sync.Mutex
 	callback         *http.Server
 	listeners        []net.Listener
 }
@@ -123,31 +125,44 @@ func (app *App) FocusProfile(name string) {
 }
 
 func (app *App) startCallbackServer() error {
-	var startErr error
-	app.callbackOnce.Do(func() {
-		listeners, err := listenLoopbackAddrs(app.callbackAddr)
-		if err != nil {
-			startErr = err
-			return
-		}
-		app.listeners = listeners
-		if !app.redirectURLFixed && len(listeners) > 0 {
-			app.service.SetOAuthRedirectURL(oauthRedirectURLForAddr(listeners[0].Addr().String()))
-		}
-		server := &http.Server{
-			Handler:           app.callbackHandler(),
-			ReadHeaderTimeout: 10 * time.Second,
-		}
-		app.callback = server
-		for _, listener := range listeners {
-			go func(listener net.Listener) {
-				if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) && app.ctx != nil {
-					runtime.LogErrorf(app.ctx, "desktop callback serve failed: %v", err)
-				}
-			}(listener)
-		}
-	})
-	return startErr
+	app.callbackMu.Lock()
+	defer app.callbackMu.Unlock()
+
+	if app.callback != nil && len(app.listeners) > 0 {
+		return nil
+	}
+
+	listeners, err := listenLoopbackAddrs(app.callbackAddr)
+	if err != nil {
+		return normalizeCallbackListenError(app.callbackAddr, err)
+	}
+	app.listeners = listeners
+	if !app.redirectURLFixed && len(listeners) > 0 {
+		app.service.SetOAuthRedirectURL(oauthRedirectURLForAddr(listeners[0].Addr().String()))
+	}
+	server := &http.Server{
+		Handler:           app.callbackHandler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	app.callback = server
+	for _, listener := range listeners {
+		go func(listener net.Listener) {
+			if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) && app.ctx != nil {
+				runtime.LogErrorf(app.ctx, "desktop callback serve failed: %v", err)
+			}
+		}(listener)
+	}
+	return nil
+}
+
+func (app *App) EnsureLoginReady() error {
+	if err := app.startCallbackServer(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(app.service.OAuthRedirectURL()) == "" {
+		return errors.New("桌面登录回调地址为空，请重启客户端后重试")
+	}
+	return nil
 }
 
 func (app *App) callbackHandler() http.Handler {
@@ -248,6 +263,23 @@ func callbackAddrFromRedirectURL(raw string) string {
 func hasDynamicPort(addr string) bool {
 	_, port, err := net.SplitHostPort(addr)
 	return err == nil && port == "0"
+}
+
+func normalizeCallbackListenError(addr string, err error) error {
+	_, port, splitErr := net.SplitHostPort(addr)
+	if splitErr != nil {
+		return err
+	}
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return fmt.Errorf("桌面登录回调端口 %s 已被占用。请先关闭 `token-manager start/serve` 或其他占用该端口的程序后再重试。", port)
+	}
+	if errors.Is(err, syscall.EACCES) {
+		return fmt.Errorf("桌面登录回调端口 %s 无法监听，请检查系统权限后重试。", port)
+	}
+	if portNum, convErr := strconv.Atoi(port); convErr == nil && portNum > 0 {
+		return fmt.Errorf("桌面登录回调端口 %s 启动失败：%w", port, err)
+	}
+	return err
 }
 
 func listenLoopbackAddrs(addr string) ([]net.Listener, error) {

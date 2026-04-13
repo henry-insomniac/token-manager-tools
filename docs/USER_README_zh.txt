@@ -37,7 +37,9 @@ Windows PowerShell:
 更新说明：
   这版新增了桌面客户端预览分发包和应用图标。
   macOS 压缩包内提供 Token Manager Tools.app，Windows 压缩包内提供 token-manager-desktop.exe。
-  桌面端登录仍然走系统浏览器，完成后会自动把结果带回客户端；回调端口也会自动避让。
+  桌面端登录仍然走系统浏览器，完成后会自动把结果带回客户端。
+  桌面端 OAuth 回调固定使用 http://localhost:1455/auth/callback。
+  如果 1455 端口已被占用，客户端会直接提示你先关闭后台 Web 服务或其他占用程序。
   桌面客户端支持关闭后隐藏、再次打开唤回，以及开机后隐藏启动。
 
 常用账号池命令：

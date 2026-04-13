@@ -33,6 +33,11 @@ func (bindings *Bindings) CreateProfile(name string) (accountpool.ProfileSnapsho
 }
 
 func (bindings *Bindings) StartLogin(name string) (appservice.LoginStartResult, error) {
+	if bindings.app != nil {
+		if err := bindings.app.EnsureLoginReady(); err != nil {
+			return appservice.LoginStartResult{}, err
+		}
+	}
 	return bindings.service.StartLogin(name)
 }
 

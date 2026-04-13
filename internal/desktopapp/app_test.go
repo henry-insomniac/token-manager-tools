@@ -2,7 +2,11 @@ package desktopapp
 
 import (
 	"net"
+	"strings"
+	"syscall"
 	"testing"
+
+	"github.com/henry-insomniac/token-manager-tools/internal/accountpool"
 )
 
 func TestCallbackAddrFromRedirectURL(t *testing.T) {
@@ -47,5 +51,25 @@ func TestListenLoopbackAddrsWithDynamicPort(t *testing.T) {
 		if port != firstPort {
 			t.Fatalf("expected listeners to share one port, got %s and %s", firstPort, port)
 		}
+	}
+}
+
+func TestNewDesktopAppUsesFixedLoopbackCallback(t *testing.T) {
+	app, err := New(accountpool.Config{HomeDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if app.callbackAddr != "127.0.0.1:1455" {
+		t.Fatalf("callbackAddr = %q, want %q", app.callbackAddr, "127.0.0.1:1455")
+	}
+	if got := app.service.OAuthRedirectURL(); got != "http://localhost:1455/auth/callback" {
+		t.Fatalf("OAuthRedirectURL() = %q, want %q", got, "http://localhost:1455/auth/callback")
+	}
+}
+
+func TestNormalizeCallbackListenErrorForOccupiedPort(t *testing.T) {
+	err := normalizeCallbackListenError("127.0.0.1:1455", &net.OpError{Err: syscall.EADDRINUSE})
+	if err == nil || !strings.Contains(err.Error(), "1455") || !strings.Contains(err.Error(), "已被占用") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
