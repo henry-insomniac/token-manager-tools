@@ -121,6 +121,7 @@ go run -tags dev ./cmd/token-manager-desktop -assetdir ./internal/server/static
 - 再次打开同一个应用时，会优先唤回已经在后台运行的客户端
 - 开机启动写入的是桌面客户端本身，默认会隐藏启动，不抢当前桌面
 - 如果本机 `1455` 已被后台 Web 服务占用，桌面端会自动改用空闲回调端口
+- macOS 预览包已补 bundle 签名；如果系统仍提示无法验证开发者，请在 Finder 中右键应用后选择“打开”一次
 - 当前已完成桌面壳、服务层绑定和桌面 transport，后续再继续补托盘、安装包和自动更新
 - 当前 release 里：macOS / Windows 包含桌面预览入口，Linux 仍以 CLI / 本地 Web 为主
 

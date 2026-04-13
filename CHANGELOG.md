@@ -4,6 +4,7 @@
 
 发布日期：2026-04-13
 
+- macOS 分发包补做 `.app` bundle 签名，修复 Finder 提示“已损坏，无法打开”的问题
 - 新增桌面客户端预览分发包：macOS 压缩包内提供 `Token Manager Tools.app`，Windows 压缩包内提供 `token-manager-desktop.exe`
 - 新增应用图标资源和跨平台 release 打包脚本，分发包统一附带启动脚本、图标文件和 `SHA256SUMS.txt`
 - 抽离 `internal/appservice` 作为共享业务层，Web 和桌面客户端改为复用同一套账号池服务

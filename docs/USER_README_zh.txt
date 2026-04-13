@@ -64,3 +64,7 @@ macOS 提示：
 如果系统拦截未签名程序，请在“系统设置 -> 隐私与安全性”里允许打开，或在终端中执行：
   chmod +x ./token-manager
   ./token-manager start
+
+桌面客户端提示：
+  macOS 预览包已经补了应用 bundle 签名。
+  如果系统仍提示无法验证开发者，请在 Finder 中右键应用，再点一次“打开”。

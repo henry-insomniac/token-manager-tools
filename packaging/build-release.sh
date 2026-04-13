@@ -109,6 +109,15 @@ write_macos_app_bundle() {
 EOF
 }
 
+sign_macos_app_bundle() {
+  APP_DIR="$1"
+  if ! command -v codesign >/dev/null 2>&1; then
+    return 0
+  fi
+  SIGN_IDENTITY=${TOKEN_MANAGER_MACOS_CODESIGN_IDENTITY:--}
+  /usr/bin/codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR"
+}
+
 make_zip() {
   TARGET_DIR="$1"
   ARCHIVE_PATH="$2"
@@ -139,6 +148,7 @@ package_platform() {
       mkdir -p "$DESKTOP_TMP"
       build_desktop_darwin "$GOARCH_NAME" "$DESKTOP_TMP"
       write_macos_app_bundle "$PKG_DIR" "$DESKTOP_TMP/token-manager-desktop"
+      sign_macos_app_bundle "$PKG_DIR/Token Manager Tools.app"
       copy_desktop_launcher "$GOOS_NAME" "$PKG_DIR"
       cp "$ICON_PNG" "$PKG_DIR/app-icon.png"
       rm -rf "$DESKTOP_TMP"
