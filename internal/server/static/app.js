@@ -3,11 +3,14 @@ const state = {
   selectedName: null,
   busy: new Set(),
   autoRefreshStarted: false,
+  login: null,
   autoSwitch: {
     enabled: false,
     events: [],
   },
 };
+
+const LOGIN_EVENT_KEY = "token-manager-last-login";
 
 const els = {
   list: document.querySelector("#profile-list"),
@@ -25,6 +28,18 @@ const els = {
   autoSwitchRun: document.querySelector("#auto-switch-run"),
   autoSwitchMeta: document.querySelector("#auto-switch-meta"),
   autoSwitchEvents: document.querySelector("#auto-switch-events"),
+  loginSheet: document.querySelector("#login-sheet"),
+  loginSheetBackdrop: document.querySelector("#login-sheet-backdrop"),
+  loginSheetClose: document.querySelector("#login-sheet-close"),
+  loginSheetTitle: document.querySelector("#login-sheet-title"),
+  loginSheetSummary: document.querySelector("#login-sheet-summary"),
+  loginSheetMeta: document.querySelector("#login-sheet-meta"),
+  loginManualInput: document.querySelector("#login-manual-input"),
+  loginOpenExternal: document.querySelector("#login-open-external"),
+  loginOpenCurrent: document.querySelector("#login-open-current"),
+  loginCopyLink: document.querySelector("#login-copy-link"),
+  loginSubmitManual: document.querySelector("#login-submit-manual"),
+  loginClearManual: document.querySelector("#login-clear-manual"),
 };
 
 els.form.addEventListener("submit", async (event) => {
@@ -45,10 +60,26 @@ els.form.addEventListener("submit", async (event) => {
 els.refresh.addEventListener("click", () => refreshAllUsage());
 els.autoSwitchToggle.addEventListener("click", () => toggleAutoSwitch());
 els.autoSwitchRun.addEventListener("click", () => runAutoSwitchCheck());
+els.loginSheetBackdrop.addEventListener("click", () => closeLoginSheet());
+els.loginSheetClose.addEventListener("click", () => closeLoginSheet());
+els.loginOpenExternal.addEventListener("click", () => openLoginInNewTab());
+els.loginOpenCurrent.addEventListener("click", () => openLoginInCurrentTab());
+els.loginCopyLink.addEventListener("click", () => copyLoginLink());
+els.loginSubmitManual.addEventListener("click", () => submitManualLogin());
+els.loginClearManual.addEventListener("click", () => {
+  els.loginManualInput.value = "";
+  els.loginManualInput.focus();
+});
+window.addEventListener("storage", (event) => {
+  if (event.key === LOGIN_EVENT_KEY && event.newValue) {
+    void consumeLoginResult(event.newValue);
+  }
+});
 
 bootstrap();
 
 async function bootstrap() {
+  void restoreLoginResult();
   await loadDashboard();
   window.setInterval(() => {
     if (document.hidden) {
@@ -269,16 +300,97 @@ function actionButton(label, handler, disabled = false, variant = "") {
 }
 
 async function startLogin(name) {
-  const popup = window.open("about:blank", "_blank");
   await runTask(`login:${name}`, async () => {
     const data = await api(`/api/profiles/${encodeURIComponent(name)}/login/start`, { method: "POST" });
-    if (popup) {
-      popup.opener = null;
-      popup.location.href = data.authUrl;
-    } else {
-      window.location.href = data.authUrl;
-    }
-    showToast("已打开登录页。登录完成后刷新账号池。");
+    openLoginSheet(data);
+    const opened = openURLInNewTab(data.authUrl);
+    showToast(opened ? "已打开登录页。完成后会自动回到账号池；如果失败，可复制链接或粘贴回调地址。" : "浏览器拦截了新窗口。请点“新窗口打开”或“当前页打开”。");
+  });
+}
+
+function openLoginSheet(flow) {
+  state.login = {
+    profileName: flow.profileName,
+    authUrl: flow.authUrl,
+    redirectUrl: flow.redirectUrl,
+  };
+  els.loginSheet.hidden = false;
+  document.body.classList.add("has-sheet");
+  els.loginSheetTitle.textContent = `登录 ${flow.profileName}`;
+  els.loginSheetSummary.textContent = `优先用系统浏览器完成 OpenAI 登录。完成后会自动写入本机槽位 ${flow.profileName}。`;
+  els.loginSheetMeta.textContent = `回调地址：${flow.redirectUrl}。如果页面没有自动写回，把最终跳转地址或 code 粘贴到上面的输入框。`;
+  if (!els.loginManualInput.value.trim()) {
+    els.loginManualInput.value = "";
+  }
+}
+
+function closeLoginSheet() {
+  state.login = null;
+  els.loginSheet.hidden = true;
+  document.body.classList.remove("has-sheet");
+}
+
+function openURLInNewTab(url) {
+  const popup = window.open(url, "_blank", "noopener");
+  return Boolean(popup);
+}
+
+function openLoginInNewTab() {
+  if (!state.login?.authUrl) {
+    return;
+  }
+  const opened = openURLInNewTab(state.login.authUrl);
+  showToast(opened ? "已再次打开登录页。" : "浏览器拦截了新窗口，请改用“当前页打开”或“复制链接”。");
+}
+
+function openLoginInCurrentTab() {
+  if (!state.login?.authUrl) {
+    return;
+  }
+  window.location.assign(state.login.authUrl);
+}
+
+async function copyLoginLink() {
+  if (!state.login?.authUrl) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(state.login.authUrl);
+    showToast("已复制登录链接。");
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = state.login.authUrl;
+    input.setAttribute("readonly", "readonly");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.append(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+    showToast("已复制登录链接。");
+  }
+}
+
+async function submitManualLogin() {
+  const profileName = state.login?.profileName;
+  const input = els.loginManualInput.value.trim();
+  if (!profileName) {
+    showToast("先点“登录”再粘贴回调地址。");
+    return;
+  }
+  if (!input) {
+    showToast("先粘贴回调地址或 code。");
+    return;
+  }
+  await runTask(`login-complete:${profileName}`, async () => {
+    const result = await api(`/api/profiles/${encodeURIComponent(profileName)}/login/complete`, {
+      method: "POST",
+      body: { input },
+    });
+    els.loginManualInput.value = "";
+    closeLoginSheet();
+    showToast(result.message || `${profileName} 已写入本机账号池。`);
+    await loadDashboard();
   });
 }
 
@@ -540,4 +652,35 @@ function escapeHTML(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+async function restoreLoginResult() {
+  try {
+    const raw = localStorage.getItem(LOGIN_EVENT_KEY);
+    if (raw) {
+      await consumeLoginResult(raw);
+    }
+  } catch {
+    // Ignore storage access errors in restrictive browser modes.
+  }
+}
+
+async function consumeLoginResult(raw) {
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    localStorage.removeItem(LOGIN_EVENT_KEY);
+    return;
+  }
+  try {
+    localStorage.removeItem(LOGIN_EVENT_KEY);
+  } catch {
+    // Ignore storage access errors in restrictive browser modes.
+  }
+  if (payload.status === "success" && payload.profileName && state.login?.profileName === payload.profileName) {
+    closeLoginSheet();
+  }
+  showToast(payload.body || payload.title || "登录状态已更新。");
+  await loadDashboard();
 }

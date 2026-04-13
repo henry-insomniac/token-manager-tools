@@ -31,6 +31,7 @@ type pendingLoginFlow struct {
 }
 
 const loginFlowTTL = 10 * time.Minute
+const loginEventStorageKey = "token-manager-last-login"
 
 func NewHandler(pool *accountpool.AccountPool) http.Handler {
 	server := &LocalServer{
@@ -201,6 +202,29 @@ func (server *LocalServer) handleProfileAction(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusOK, map[string]any{
 			"profileName": flow.ProfileName,
 			"authUrl":     flow.AuthURL,
+			"redirectUrl": flow.RedirectURL,
+		})
+	case "login/complete":
+		var input struct {
+			Input string `json:"input"`
+		}
+		if err := decodeJSONBody(r, &input); err != nil {
+			writeAPIError(w, err, http.StatusBadRequest)
+			return
+		}
+		tokens, err := server.completeManualLogin(name, input.Input)
+		if err != nil {
+			writeAPIError(w, err, http.StatusBadRequest)
+			return
+		}
+		label := tokens.Email
+		if strings.TrimSpace(label) == "" {
+			label = name
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"profileName":  name,
+			"accountEmail": tokens.Email,
+			"message":      fmt.Sprintf("%s 已写入本机账号池。", label),
 		})
 	default:
 		writeAPIError(w, fmt.Errorf("未知账号槽位动作: %s", action), http.StatusNotFound)
@@ -242,41 +266,37 @@ func (server *LocalServer) handleOAuthCallback(w http.ResponseWriter, r *http.Re
 	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	if state == "" {
-		writeCallbackHTML(w, "登录失败", "缺少登录校验信息。请回到账号池页面重新登录。")
+		writeCallbackHTML(w, "登录失败", "缺少登录校验信息。请回到账号池页面重新登录。", "", "error")
 		return
 	}
-	server.pendingMu.Lock()
-	pending, ok := server.pending[state]
-	delete(server.pending, state)
-	server.pendingMu.Unlock()
-	if !ok {
-		writeCallbackHTML(w, "登录失败", "登录流程已失效。请回到账号池页面重新登录。")
-		return
-	}
-	if time.Since(pending.createdAt) > loginFlowTTL {
-		writeCallbackHTML(w, "登录失败", "登录流程已过期。请回到账号池页面重新登录。")
+	pending, err := server.pendingLoginFlowByState(state, time.Now())
+	if err != nil {
+		writeCallbackHTML(w, "登录失败", err.Error(), "", "error")
 		return
 	}
 	flow := pending.flow
 	if authErr := strings.TrimSpace(r.URL.Query().Get("error")); authErr != "" {
-		writeCallbackHTML(w, "登录失败", authErr)
+		server.discardPendingLoginFlow(state)
+		writeCallbackHTML(w, "登录失败", authErr, flow.ProfileName, "error")
 		return
 	}
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	if code == "" {
-		writeCallbackHTML(w, "登录失败", "回调缺少授权 code。请重新登录。")
+		server.discardPendingLoginFlow(state)
+		writeCallbackHTML(w, "登录失败", "回调缺少授权 code。请重新登录。", flow.ProfileName, "error")
 		return
 	}
 	tokens, err := server.pool.CompleteLogin(flow.ProfileName, code, flow.Verifier)
 	if err != nil {
-		writeCallbackHTML(w, "登录失败", err.Error())
+		writeCallbackHTML(w, "登录失败", err.Error(), flow.ProfileName, "error")
 		return
 	}
+	server.discardPendingLoginFlow(state)
 	label := tokens.Email
 	if strings.TrimSpace(label) == "" {
 		label = flow.ProfileName
 	}
-	writeCallbackHTML(w, "登录成功", fmt.Sprintf("%s 已写入本机账号池。可以关闭这个页面。", label))
+	writeCallbackHTML(w, "登录成功", fmt.Sprintf("%s 已写入本机账号池。正在返回账号池。", label), flow.ProfileName, "success")
 }
 
 func (server *LocalServer) startAutoSwitchLoop() {
@@ -313,9 +333,87 @@ func writeAPIError(w http.ResponseWriter, err error, status int) {
 	writeJSON(w, status, map[string]any{"error": err.Error()})
 }
 
-func writeCallbackHTML(w http.ResponseWriter, title, body string) {
+func (server *LocalServer) completeManualLogin(profileName, rawInput string) (accountpool.OAuthTokens, error) {
+	parsed, err := accountpool.ParseManualLoginInput(rawInput)
+	if err != nil {
+		return accountpool.OAuthTokens{}, err
+	}
+	pending, err := server.pendingLoginFlowForProfile(profileName, parsed.State, time.Now())
+	if err != nil {
+		return accountpool.OAuthTokens{}, err
+	}
+	tokens, err := server.pool.CompleteLogin(pending.flow.ProfileName, parsed.Code, pending.flow.Verifier)
+	if err != nil {
+		return accountpool.OAuthTokens{}, err
+	}
+	server.discardPendingLoginFlow(pending.flow.State)
+	return tokens, nil
+}
+
+func (server *LocalServer) pendingLoginFlowByState(state string, now time.Time) (pendingLoginFlow, error) {
+	server.pendingMu.Lock()
+	defer server.pendingMu.Unlock()
+	server.cleanupExpiredLoginFlowsLocked(now)
+	pending, ok := server.pending[state]
+	if !ok {
+		return pendingLoginFlow{}, fmt.Errorf("登录流程已失效。请回到账号池页面重新登录。")
+	}
+	return pending, nil
+}
+
+func (server *LocalServer) pendingLoginFlowForProfile(profileName, state string, now time.Time) (pendingLoginFlow, error) {
+	server.pendingMu.Lock()
+	defer server.pendingMu.Unlock()
+	server.cleanupExpiredLoginFlowsLocked(now)
+	if strings.TrimSpace(state) != "" {
+		pending, ok := server.pending[state]
+		if !ok {
+			return pendingLoginFlow{}, fmt.Errorf("登录流程已失效。请先重新点“登录”。")
+		}
+		if pending.flow.ProfileName != profileName {
+			return pendingLoginFlow{}, fmt.Errorf("回调槽位和当前槽位不一致。请重新开始登录。")
+		}
+		return pending, nil
+	}
+
+	var latest pendingLoginFlow
+	found := false
+	for _, pending := range server.pending {
+		if pending.flow.ProfileName != profileName {
+			continue
+		}
+		if !found || pending.createdAt.After(latest.createdAt) {
+			latest = pending
+			found = true
+		}
+	}
+	if !found {
+		return pendingLoginFlow{}, fmt.Errorf("没有找到未完成的登录流程。请先点“登录”。")
+	}
+	return latest, nil
+}
+
+func (server *LocalServer) discardPendingLoginFlow(state string) {
+	server.pendingMu.Lock()
+	defer server.pendingMu.Unlock()
+	delete(server.pending, state)
+}
+
+func writeCallbackHTML(w http.ResponseWriter, title, body, profileName, status string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	payload, _ := json.Marshal(map[string]string{
+		"status":      status,
+		"title":       title,
+		"body":        body,
+		"profileName": profileName,
+		"at":          time.Now().Format(time.RFC3339Nano),
+	})
+	payloadScript := strings.ReplaceAll(string(payload), "</", "<\\/")
+	redirectDelay := 1400
+	if status == "success" {
+		redirectDelay = 900
+	}
 	_, _ = fmt.Fprintf(w, `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -327,10 +425,30 @@ func writeCallbackHTML(w http.ResponseWriter, title, body string) {
     main{width:min(520px,calc(100vw - 40px));border:1px solid #354136;background:#20261f;border-radius:28px;padding:34px}
     h1{margin:0 0 12px;font-size:28px}
     p{margin:0;color:#aeb8aa;line-height:1.7}
+    a{display:inline-flex;margin-top:16px;color:#dceec7}
   </style>
 </head>
-<body><main><h1>%s</h1><p>%s</p></main></body>
-</html>`, htmlEscape(title), htmlEscape(title), htmlEscape(body))
+<body>
+<main>
+  <h1>%s</h1>
+  <p>%s</p>
+  <a href="/">返回账号池</a>
+</main>
+<script>
+  const payload = %s;
+  const storageKey = %q;
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(payload));
+  } catch {}
+  window.setTimeout(() => {
+    try {
+      window.close();
+    } catch {}
+    window.location.replace("/");
+  }, %d);
+</script>
+</body>
+</html>`, htmlEscape(title), htmlEscape(title), htmlEscape(body), payloadScript, loginEventStorageKey, redirectDelay)
 }
 
 func htmlEscape(value string) string {

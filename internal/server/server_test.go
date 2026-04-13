@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,11 +61,12 @@ func TestStartLoginAPIHidesVerifier(t *testing.T) {
 	var body struct {
 		ProfileName string `json:"profileName"`
 		AuthURL     string `json:"authUrl"`
+		RedirectURL string `json:"redirectUrl"`
 	}
 	if err := json.Unmarshal([]byte(raw), &body); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if body.ProfileName != "acct-login" || !strings.Contains(body.AuthURL, "code_challenge=") {
+	if body.ProfileName != "acct-login" || !strings.Contains(body.AuthURL, "code_challenge=") || !strings.Contains(body.RedirectURL, "/auth/callback") {
 		t.Fatalf("unexpected login response: %#v", body)
 	}
 }
@@ -79,6 +81,70 @@ func TestCallbackRejectsUnknownState(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), "登录流程已失效") {
 		t.Fatalf("unexpected callback body: %s", resp.Body.String())
 	}
+}
+
+func TestManualLoginCompleteAPI(t *testing.T) {
+	accessToken := accountpoolTestToken(t, "acct-manual-id", "manual@example.com")
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		writeJSONResponse(t, w, map[string]any{
+			"access_token":  accessToken,
+			"refresh_token": "refresh-manual",
+			"id_token":      "id-manual",
+			"expires_in":    3600,
+		})
+	}))
+	defer tokenServer.Close()
+
+	pool := newTestPoolWithConfig(t, accountpool.Config{OAuthTokenURL: tokenServer.URL})
+	if _, err := pool.CreateProfile("acct-manual"); err != nil {
+		t.Fatalf("CreateProfile: %v", err)
+	}
+	handler := NewHandler(pool)
+
+	startResp := httptest.NewRecorder()
+	handler.ServeHTTP(startResp, httptest.NewRequest(http.MethodPost, "/api/profiles/acct-manual/login/start", nil))
+	if startResp.Code != http.StatusOK {
+		t.Fatalf("unexpected start status %d: %s", startResp.Code, startResp.Body.String())
+	}
+	var startBody struct {
+		AuthURL string `json:"authUrl"`
+	}
+	if err := json.NewDecoder(startResp.Body).Decode(&startBody); err != nil {
+		t.Fatalf("Decode start: %v", err)
+	}
+	parsedURL, err := url.Parse(startBody.AuthURL)
+	if err != nil {
+		t.Fatalf("Parse auth url: %v", err)
+	}
+	state := parsedURL.Query().Get("state")
+	if state == "" {
+		t.Fatalf("missing state in auth url: %s", startBody.AuthURL)
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/profiles/acct-manual/login/complete", bytes.NewBufferString(`{"input":"http://127.0.0.1:1455/auth/callback?code=manual-code&state=`+state+`"}`))
+	completeReq.Header.Set("Content-Type", "application/json")
+	completeResp := httptest.NewRecorder()
+	handler.ServeHTTP(completeResp, completeReq)
+	if completeResp.Code != http.StatusOK {
+		t.Fatalf("unexpected complete status %d: %s", completeResp.Code, completeResp.Body.String())
+	}
+
+	profiles, err := pool.ListProfiles()
+	if err != nil {
+		t.Fatalf("ListProfiles: %v", err)
+	}
+	for _, profile := range profiles {
+		if profile.Name == "acct-manual" {
+			if profile.AccountEmail != "manual@example.com" || !profile.HasCredential {
+				t.Fatalf("manual login did not persist credentials: %#v", profile)
+			}
+			return
+		}
+	}
+	t.Fatalf("manual profile missing from list")
 }
 
 func TestAutoSwitchAPIGetAndPatch(t *testing.T) {

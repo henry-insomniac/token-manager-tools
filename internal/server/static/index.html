@@ -66,6 +66,36 @@
         </aside>
       </section>
     </main>
+    <div class="login-sheet" id="login-sheet" hidden>
+      <div class="login-sheet-backdrop" id="login-sheet-backdrop"></div>
+      <section class="login-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="login-sheet-title">
+        <div class="login-sheet-header">
+          <p class="eyebrow">登录辅助</p>
+          <button class="sheet-close" id="login-sheet-close" type="button" aria-label="关闭">关闭</button>
+        </div>
+        <h2 id="login-sheet-title">登录</h2>
+        <p class="muted" id="login-sheet-summary">正在准备登录页。</p>
+        <div class="login-sheet-actions">
+          <button class="tool-button tool-button-primary" id="login-open-external" type="button">新窗口打开</button>
+          <button class="tool-button" id="login-open-current" type="button">当前页打开</button>
+          <button class="tool-button" id="login-copy-link" type="button">复制链接</button>
+        </div>
+        <div class="login-sheet-note">
+          <p>
+            如果 OpenAI 登录页显示“身份验证错误”或 `unknown_error`，先改用 Chrome / Brave / Edge 这类系统浏览器，并确认浏览器允许 Cookie。不要用内嵌浏览器。
+          </p>
+        </div>
+        <div class="login-sheet-field">
+          <label for="login-manual-input">粘贴最终回调地址或 code</label>
+          <textarea id="login-manual-input" rows="4" placeholder="http://127.0.0.1:1455/auth/callback?code=...&state=..."></textarea>
+          <p class="muted" id="login-sheet-meta">完成登录后，本页会自动写入；如果没自动完成，可以把最终跳转地址或 code 粘贴到这里。</p>
+        </div>
+        <div class="login-sheet-actions">
+          <button class="tool-button tool-button-primary" id="login-submit-manual" type="button">写入本机槽位</button>
+          <button class="tool-button" id="login-clear-manual" type="button">清空</button>
+        </div>
+      </section>
+    </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="/app.js"></script>
   </body>

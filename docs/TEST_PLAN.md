@@ -112,6 +112,7 @@ remove/archive
 
 - 已覆盖 API 创建/列表。
 - 已覆盖 login-start 不泄露 verifier。
+- 已覆盖 login-complete 手动写入流程。
 - 已覆盖未知 callback state 页面。
 - 尚未做浏览器端端到端自动化。
 

@@ -390,33 +390,5 @@ func loginProfileManual(pool *accountpool.AccountPool, profileName string, flow 
 }
 
 func parseManualLoginCode(rawInput, expectedState string) (string, error) {
-	input := strings.TrimSpace(rawInput)
-	if input == "" {
-		return "", errors.New("未输入登录回调地址或 code")
-	}
-
-	if parsed, err := url.Parse(input); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-		return parseLoginQuery(parsed.Query(), expectedState)
-	}
-	if strings.Contains(input, "code=") {
-		query := strings.TrimPrefix(input, "?")
-		if parsedQuery, err := url.ParseQuery(query); err == nil && parsedQuery.Get("code") != "" {
-			return parseLoginQuery(parsedQuery, expectedState)
-		}
-	}
-	return input, nil
-}
-
-func parseLoginQuery(query url.Values, expectedState string) (string, error) {
-	if authErr := strings.TrimSpace(query.Get("error")); authErr != "" {
-		return "", fmt.Errorf("登录失败: %s", authErr)
-	}
-	if state := strings.TrimSpace(query.Get("state")); state != "" && state != expectedState {
-		return "", errors.New("登录回调校验失败")
-	}
-	code := strings.TrimSpace(query.Get("code"))
-	if code == "" {
-		return "", errors.New("登录回调缺少 code")
-	}
-	return code, nil
+	return accountpool.ParseManualLoginCode(rawInput, expectedState)
 }
