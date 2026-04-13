@@ -39,8 +39,6 @@ func (app *App) RefreshApplicationMenu() {
 
 func (app *App) RefreshDesktopMenus() {
 	app.RefreshApplicationMenu()
-	app.RefreshStatusItem()
-	app.RefreshTitlebarAccessory()
 }
 
 func (app *App) buildQuickActionsMenu(target *menu.Menu) {

@@ -80,22 +80,9 @@ func (app *App) Startup(ctx context.Context) {
 
 func (app *App) DomReady(ctx context.Context) {
 	app.ctx = ctx
-	go func() {
-		time.Sleep(250 * time.Millisecond)
-		app.installStatusItem()
-		app.installTitlebarAccessory()
-		app.RefreshDesktopMenus()
-		app.RefreshTitlebarAccessory()
-		time.Sleep(1200 * time.Millisecond)
-		app.RefreshStatusItem()
-		app.RefreshTitlebarAccessory()
-		app.logStatusItemState("dom-ready-delayed")
-	}()
 }
 
 func (app *App) Shutdown(ctx context.Context) {
-	app.removeStatusItem()
-	app.removeTitlebarAccessory()
 	if app.callback != nil {
 		_ = app.callback.Shutdown(context.Background())
 	}

@@ -46,12 +46,7 @@ func main() {
 		OnDomReady:       app.DomReady,
 		OnShutdown:       app.Shutdown,
 		BackgroundColour: &options.RGBA{R: 21, G: 25, B: 22, A: 255},
-		Mac: &wailsmac.Options{
-			TitleBar: &wailsmac.TitleBar{
-				UseToolbar:           true,
-				HideToolbarSeparator: true,
-			},
-		},
+		Mac:              &wailsmac.Options{},
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
