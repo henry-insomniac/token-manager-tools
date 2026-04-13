@@ -142,6 +142,12 @@ doctor
 - 中期：native app 启动 token-manager daemon
 - 长期：账号池项目独立发布，native 作为集成方
 
+当前进度：
+
+- 已接入桌面客户端入口、共享服务层和前端 transport 适配层
+- 已提供桌面客户端预览分发包和应用图标
+- macOS / Windows release 已开始附带桌面入口，Linux 继续保持 CLI / 本地 Web 主路径
+
 ## Release 建议
 
 ```text

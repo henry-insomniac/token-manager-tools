@@ -23,6 +23,21 @@
         </form>
       </section>
 
+      <section class="desktop-quickbar" id="desktop-quickbar" aria-label="桌面快捷栏" hidden>
+        <div class="desktop-quickbar-head">
+          <div class="desktop-quickbar-copy">
+            <p class="eyebrow">顶部快捷栏</p>
+            <strong id="desktop-quickbar-active">当前运行槽位：未切换</strong>
+            <p class="muted" id="desktop-quickbar-meta">如果右上角菜单栏入口没出现，直接用这里查看额度和执行快捷操作。</p>
+          </div>
+          <div class="desktop-quickbar-actions">
+            <button class="tool-button tool-button-primary" id="desktop-quickbar-refresh" type="button">刷新额度</button>
+            <button class="tool-button" id="desktop-quickbar-run" type="button">自动切换检查</button>
+          </div>
+        </div>
+        <div class="desktop-quickbar-profiles" id="desktop-quickbar-profiles"></div>
+      </section>
+
       <section class="summary-strip" aria-label="账号池摘要">
         <div>
           <span id="summary-total">0</span>
@@ -58,6 +73,21 @@
         <div class="auto-switch-events" id="auto-switch-events"></div>
       </section>
 
+      <section class="desktop-panel" id="desktop-panel" aria-label="桌面运行" hidden>
+        <div class="desktop-panel-copy">
+          <p class="eyebrow desktop-panel-eyebrow">桌面客户端</p>
+          <h2>关闭窗口后继续在后台运行</h2>
+          <p class="muted" id="desktop-panel-summary">当前窗口可以隐藏到后台，账号检查和自动切换会继续运行。</p>
+        </div>
+        <div class="desktop-panel-actions">
+          <span class="badge" id="desktop-autostart-badge">未启用</span>
+          <button class="tool-button" id="desktop-autostart-toggle" type="button">开启开机启动</button>
+          <button class="tool-button" id="desktop-hide-window" type="button">隐藏窗口</button>
+          <button class="tool-button tool-button-danger" id="desktop-quit-app" type="button">退出客户端</button>
+        </div>
+        <div class="desktop-panel-meta" id="desktop-panel-meta"></div>
+      </section>
+
       <section class="workspace">
         <div class="profile-list" id="profile-list" aria-live="polite"></div>
         <aside class="detail-panel" id="detail-panel">
@@ -87,7 +117,7 @@
         </div>
         <div class="login-sheet-field">
           <label for="login-manual-input">粘贴最终回调地址或 code</label>
-          <textarea id="login-manual-input" rows="4" placeholder="http://localhost:1455/auth/callback?code=...&state=..."></textarea>
+          <textarea id="login-manual-input" rows="4" placeholder="http://localhost:&lt;端口&gt;/auth/callback?code=...&state=..."></textarea>
           <p class="muted" id="login-sheet-meta">完成登录后，本页会自动写入；如果没自动完成，可以把最终跳转地址或 code 粘贴到这里。</p>
         </div>
         <div class="login-sheet-actions">
@@ -97,6 +127,8 @@
       </section>
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/desktop-transport.js"></script>
+    <script src="/transport.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

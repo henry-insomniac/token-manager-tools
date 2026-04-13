@@ -117,6 +117,17 @@ remove/archive
 - 已覆盖未知 callback state 页面。
 - 尚未做浏览器端端到端自动化。
 
+### Desktop Preview
+
+- `go run -tags dev ./cmd/token-manager-desktop -assetdir ./internal/server/static` 可拉起桌面预览
+- `packaging/build-token-manager-desktop.sh` / `.bat` 可构建当前平台桌面二进制
+- `packaging/build-release.sh` 可生成 release 压缩包、图标文件和 `SHA256SUMS.txt`
+- 桌面端 callback 端口自动避让，不与 `token-manager start/serve` 默认 `1455` 撞口
+- 登录仍走系统浏览器，完成后结果要能自动回写到客户端
+- 关闭窗口后客户端会隐藏到后台，再次打开应用要唤回现有实例
+- 开机启动写入桌面客户端本身，并带 `--start-hidden`
+- macOS release 包内要包含 `.app` 与 `.icns` 图标，Windows release 包内要包含 `token-manager-desktop.exe` 与 `.ico`
+
 ## 集成测试矩阵
 
 ```text

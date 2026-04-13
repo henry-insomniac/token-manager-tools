@@ -89,6 +89,28 @@ func TestCompleteLoginPersistsTokensAndCodexAuth(t *testing.T) {
 	}
 }
 
+func TestSetOAuthRedirectURLUpdatesLoginFlow(t *testing.T) {
+	pool := newTestPoolWithConfig(t, Config{
+		OAuthRedirectURL: "http://localhost:1455/auth/callback",
+	})
+	pool.SetOAuthRedirectURL("http://localhost:18765/auth/callback")
+
+	flow, err := pool.StartLogin("acct-redirect")
+	if err != nil {
+		t.Fatalf("StartLogin: %v", err)
+	}
+	if flow.RedirectURL != "http://localhost:18765/auth/callback" {
+		t.Fatalf("unexpected redirect url: %s", flow.RedirectURL)
+	}
+	parsed, err := url.Parse(flow.AuthURL)
+	if err != nil {
+		t.Fatalf("Parse auth url: %v", err)
+	}
+	if got := parsed.Query().Get("redirect_uri"); got != "http://localhost:18765/auth/callback" {
+		t.Fatalf("unexpected redirect_uri in auth url: %s", got)
+	}
+}
+
 func TestProbeProfileFetchesUsage(t *testing.T) {
 	reset := time.Date(2026, 4, 11, 11, 0, 0, 0, time.UTC).Unix()
 	accessToken := fakeAccessToken(t, "acct-probe-id", "probe@example.com")

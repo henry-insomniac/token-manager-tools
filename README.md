@@ -2,7 +2,7 @@
 
 Token Manager Tools 是一个跨平台账号池管理工具。
 
-当前版本：`0.1.0-preview.10`
+当前版本：`0.1.0-preview.11`
 
 它从 OpenClaw Manager Native 的账号池能力中拆出来，目标是让 Windows、macOS、Linux 用户都能管理本机 Codex/OpenAI 账号池。用户不安装 OpenClaw 也能使用账号池；安装 OpenClaw 后，再启用兼容同步和运行时集成。
 
@@ -10,10 +10,21 @@ Token Manager Tools 是一个跨平台账号池管理工具。
 
 本次预览更新：
 
-- 修复浏览器 OAuth 已登录但回调页出现 `ERR_EMPTY_RESPONSE` 的问题
-- `serve/start` 启动的本地服务现在同时接收 `127.0.0.1` 和 `localhost` 回调，避免 loopback host 不一致
-- 浏览器入口、回调示例和分发包启动提示统一改成 `http://localhost:<端口>/`
-- 如果回调端口已被其他程序占用，会直接提示改用其他端口启动
+- 新增桌面客户端预览分发包，macOS 压缩包内提供 `Token Manager Tools.app`，Windows 压缩包内提供 `token-manager-desktop.exe`
+- 新增应用图标资源和跨平台 release 打包脚本，分发包统一附带图标、启动脚本和 `SHA256SUMS.txt`
+- 抽离 `internal/appservice` 和前端 transport 适配层，Web 与桌面客户端复用同一套账号池逻辑
+- 桌面客户端登录继续使用系统浏览器，callback 端口会自动避让，不再和 `token-manager start/serve` 默认 `1455` 冲突
+- 桌面客户端支持关闭后隐藏、单实例唤回、开机启动，以及窗口内快捷操作区
+
+桌面客户端进度：
+
+- 已接入桌面客户端入口 `cmd/token-manager-desktop`
+- 客户端窗口复用现有前端页面
+- 客户端模式优先通过 Wails 绑定直接调用 Go 服务层
+- 登录仍然使用系统浏览器，完成后通过本地 callback 自动把结果带回客户端
+- 桌面端 callback 默认会自动挑选空闲 loopback 端口，避免和 `token-manager start/serve` 的 `1455` 撞口
+- 已支持关闭窗口后隐藏到后台，再次打开应用会唤回现有窗口
+- 已支持桌面端开机启动，默认用隐藏窗口方式拉起
 
 已具备第一批本地能力：
 
@@ -77,6 +88,46 @@ go run ./cmd/token-manager start 18080
 go run ./cmd/token-manager status
 go run ./cmd/token-manager stop
 go run ./cmd/token-manager serve
+```
+
+## 桌面客户端预览
+
+当前仓库已经提供桌面客户端预览分发包，但它仍是开发预览，不是正式安装器。
+
+源码调试：
+
+```bash
+go run -tags dev ./cmd/token-manager-desktop -assetdir ./internal/server/static
+```
+
+本机构建当前平台桌面二进制：
+
+```bash
+./packaging/build-token-manager-desktop.sh
+```
+
+构建整套 release 资产：
+
+```bash
+./packaging/build-release.sh
+```
+
+说明：
+
+- 这是客户端窗口，不需要手动打开 `localhost`
+- OAuth 登录仍然会拉起系统浏览器
+- 登录完成后会自动把结果回写到客户端
+- 关闭窗口默认会隐藏到后台，不会直接退出
+- 再次打开同一个应用时，会优先唤回已经在后台运行的客户端
+- 开机启动写入的是桌面客户端本身，默认会隐藏启动，不抢当前桌面
+- 如果本机 `1455` 已被后台 Web 服务占用，桌面端会自动改用空闲回调端口
+- 当前已完成桌面壳、服务层绑定和桌面 transport，后续再继续补托盘、安装包和自动更新
+- 当前 release 里：macOS / Windows 包含桌面预览入口，Linux 仍以 CLI / 本地 Web 为主
+
+Windows 本机构建：
+
+```bat
+packaging\build-token-manager-desktop.bat
 ```
 
 如果默认 `1455` 端口被占用，可以指定端口启动：

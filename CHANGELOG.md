@@ -1,5 +1,16 @@
 # 更新日志
 
+## v0.1.0-preview.11
+
+发布日期：2026-04-13
+
+- 新增桌面客户端预览分发包：macOS 压缩包内提供 `Token Manager Tools.app`，Windows 压缩包内提供 `token-manager-desktop.exe`
+- 新增应用图标资源和跨平台 release 打包脚本，分发包统一附带启动脚本、图标文件和 `SHA256SUMS.txt`
+- 抽离 `internal/appservice` 作为共享业务层，Web 和桌面客户端改为复用同一套账号池服务
+- 前端增加 transport 适配层，桌面客户端优先直连 Go 服务，浏览器模式继续走本地 HTTP API
+- 桌面客户端登录继续使用系统浏览器，callback 端口会自动避让，避免和 `token-manager start/serve` 默认 `1455` 撞口
+- 桌面客户端支持关闭后隐藏、单实例唤回和开机启动，窗口内增加快捷操作区，方便直接查看额度和执行刷新
+
 ## v0.1.0-preview.10
 
 发布日期：2026-04-13

@@ -30,12 +30,13 @@ OpenClaw Manager Native 已经有一套 Go daemon 账号池能力：
 
 ### 复杂度控制
 
-第一阶段最多引入两个核心抽象：
+初版核心仍然保持为一个可复用 Go 核心，不拆平台专属业务副本：
 
-- `AccountPool`: 账号池业务入口
+- `AccountPool`: 文件系统、OAuth、额度、切换等账号池能力
 - `Platform`: 跨平台路径、浏览器、权限适配
+- `AppService`: 供本地 Web 和桌面客户端共用的应用服务层
 
-如果一开始拆出过多 service，会让项目还没跑起来就过度工程化。
+共享服务层只负责把 UI 入口需要的动作收口，不再把账号池业务散落在 HTTP handler 或桌面壳里。
 
 ## 总体架构
 
@@ -70,11 +71,20 @@ cmd/token-manager
 internal/server
   local API + embedded browser UI
 
+internal/appservice
+  shared application service for web and desktop shells
+
 internal/accountpool
   profile discovery, scaffold, archive, OAuth, quota, default mirror sync
 
 internal/platform
   OS paths, browser open, file permissions
+
+internal/desktopapp
+  desktop shell bindings, callback listener, menu/titlebar adapters
+
+internal/logincallback
+  shared callback completion page renderer
 ```
 
 ## 运行模式

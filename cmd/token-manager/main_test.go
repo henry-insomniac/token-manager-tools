@@ -1,8 +1,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/henry-insomniac/token-manager-tools/internal/platform"
 )
 
 func TestParseManualLoginCodeFromCallbackURL(t *testing.T) {
@@ -124,5 +128,24 @@ func TestShouldReplaceExistingServer(t *testing.T) {
 		ExecutablePath: currentExec,
 	}, currentExec, addr) {
 		t.Fatalf("same executable and addr should keep existing service")
+	}
+}
+
+func TestAutoStartArgs(t *testing.T) {
+	args := autoStartArgs("127.0.0.1:18080")
+	joined := strings.Join(args, " ")
+	if joined != "start 127.0.0.1:18080 --no-open" {
+		t.Fatalf("unexpected autostart args: %s", joined)
+	}
+}
+
+func TestValidatePersistentExecutableRejectsTempBinary(t *testing.T) {
+	executable := filepath.Join(os.TempDir(), "go-build-token-manager", "token-manager")
+	err := platform.ValidatePersistentExecutable(executable)
+	if err == nil {
+		t.Fatalf("expected temp executable to be rejected")
+	}
+	if !strings.Contains(err.Error(), "临时可执行文件") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

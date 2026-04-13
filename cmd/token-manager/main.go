@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/henry-insomniac/token-manager-tools/internal/accountpool"
+	"github.com/henry-insomniac/token-manager-tools/internal/appservice"
 	"github.com/henry-insomniac/token-manager-tools/internal/platform"
 	localserver "github.com/henry-insomniac/token-manager-tools/internal/server"
 )
@@ -234,7 +235,7 @@ func serveProfiles(pool *accountpool.AccountPool, addr string, openBrowser bool)
 			fmt.Printf("自动打开浏览器失败，请手动访问上面的地址。原因: %v\n", err)
 		}
 	}
-	handler := localserver.NewHandler(pool)
+	handler := localserver.NewHandler(appservice.New(pool))
 	errCh := make(chan error, len(listeners))
 	for _, listener := range listeners {
 		server := &http.Server{

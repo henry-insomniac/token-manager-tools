@@ -66,6 +66,18 @@ func New(config Config) (*AccountPool, error) {
 	return pool, ensureDir(managerDir)
 }
 
+func (pool *AccountPool) SetOAuthRedirectURL(raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	pool.redirectURL = raw
+}
+
+func (pool *AccountPool) OAuthRedirectURL() string {
+	return pool.redirectURL
+}
+
 func (pool *AccountPool) ListProfiles() ([]ProfileSnapshot, error) {
 	state, err := pool.loadState()
 	if err != nil {

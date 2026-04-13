@@ -4,6 +4,7 @@ const state = {
   busy: new Set(),
   autoRefreshStarted: false,
   login: null,
+  desktop: null,
   autoSwitch: {
     enabled: false,
     events: [],
@@ -11,6 +12,11 @@ const state = {
 };
 
 const LOGIN_EVENT_KEY = "token-manager-last-login";
+const LOGIN_RUNTIME_EVENT = "token-manager-login-result";
+const DESKTOP_ACTION_RUNTIME_EVENT = "token-manager-desktop-action";
+const FOCUS_PROFILE_RUNTIME_EVENT = "token-manager-focus-profile";
+const transport = window.tokenManagerTransport;
+const runtime = window.runtime;
 
 const els = {
   list: document.querySelector("#profile-list"),
@@ -19,6 +25,12 @@ const els = {
   form: document.querySelector("#create-form"),
   input: document.querySelector("#profile-name"),
   refresh: document.querySelector("#refresh-button"),
+  desktopQuickbar: document.querySelector("#desktop-quickbar"),
+  desktopQuickbarActive: document.querySelector("#desktop-quickbar-active"),
+  desktopQuickbarMeta: document.querySelector("#desktop-quickbar-meta"),
+  desktopQuickbarProfiles: document.querySelector("#desktop-quickbar-profiles"),
+  desktopQuickbarRefresh: document.querySelector("#desktop-quickbar-refresh"),
+  desktopQuickbarRun: document.querySelector("#desktop-quickbar-run"),
   total: document.querySelector("#summary-total"),
   checked: document.querySelector("#summary-checked"),
   fiveHourRisk: document.querySelector("#summary-fivehour-risk"),
@@ -28,6 +40,13 @@ const els = {
   autoSwitchRun: document.querySelector("#auto-switch-run"),
   autoSwitchMeta: document.querySelector("#auto-switch-meta"),
   autoSwitchEvents: document.querySelector("#auto-switch-events"),
+  desktopPanel: document.querySelector("#desktop-panel"),
+  desktopPanelSummary: document.querySelector("#desktop-panel-summary"),
+  desktopPanelMeta: document.querySelector("#desktop-panel-meta"),
+  desktopAutoStartBadge: document.querySelector("#desktop-autostart-badge"),
+  desktopAutoStartToggle: document.querySelector("#desktop-autostart-toggle"),
+  desktopHideWindow: document.querySelector("#desktop-hide-window"),
+  desktopQuitApp: document.querySelector("#desktop-quit-app"),
   loginSheet: document.querySelector("#login-sheet"),
   loginSheetBackdrop: document.querySelector("#login-sheet-backdrop"),
   loginSheetClose: document.querySelector("#login-sheet-close"),
@@ -50,7 +69,7 @@ els.form.addEventListener("submit", async (event) => {
     return;
   }
   await runTask("create", async () => {
-    await api("/api/profiles", { method: "POST", body: { name } });
+    await transport.createProfile(name);
     els.input.value = "";
     showToast(`已创建 ${name}`);
     await loadDashboard();
@@ -58,8 +77,13 @@ els.form.addEventListener("submit", async (event) => {
 });
 
 els.refresh.addEventListener("click", () => refreshAllUsage());
+els.desktopQuickbarRefresh.addEventListener("click", () => refreshAllUsage());
 els.autoSwitchToggle.addEventListener("click", () => toggleAutoSwitch());
 els.autoSwitchRun.addEventListener("click", () => runAutoSwitchCheck());
+els.desktopQuickbarRun.addEventListener("click", () => runAutoSwitchCheck());
+els.desktopAutoStartToggle.addEventListener("click", () => toggleDesktopAutoStart());
+els.desktopHideWindow.addEventListener("click", () => hideDesktopWindow());
+els.desktopQuitApp.addEventListener("click", () => quitDesktopApp());
 els.loginSheetBackdrop.addEventListener("click", () => closeLoginSheet());
 els.loginSheetClose.addEventListener("click", () => closeLoginSheet());
 els.loginOpenExternal.addEventListener("click", () => openLoginInNewTab());
@@ -79,8 +103,9 @@ window.addEventListener("storage", (event) => {
 bootstrap();
 
 async function bootstrap() {
-  void restoreLoginResult();
-  await loadDashboard();
+  applyDesktopChrome();
+  bindDesktopRuntimeEvents();
+  await Promise.all([restoreLoginResult(), loadDashboard(), loadDesktopStatus()]);
   window.setInterval(() => {
     if (document.hidden) {
       return;
@@ -89,13 +114,44 @@ async function bootstrap() {
   }, 15000);
 }
 
+function applyDesktopChrome() {
+  document.body.classList.toggle("desktop-mode", isDesktopMode());
+  if (!isDesktopMode()) {
+    return;
+  }
+  document.title = "Token Manager Tools";
+  const eyebrow = document.querySelector(".masthead .eyebrow");
+  const title = document.querySelector(".masthead h1");
+  const lede = document.querySelector(".masthead .lede");
+  if (eyebrow) {
+    eyebrow.textContent = "macOS 客户端";
+  }
+  if (title) {
+    title.textContent = "账号池";
+  }
+  if (lede) {
+    lede.textContent = "本机管理 Codex / OpenAI 槽位。登录、切换和自动兜底都留在这一个窗口里。";
+  }
+}
+
 async function loadDashboard() {
   await Promise.all([loadProfiles(), loadAutoSwitchStatus()]);
 }
 
+async function loadDesktopStatus() {
+  if (!isDesktopMode()) {
+    renderDesktopPanel();
+    return;
+  }
+  await runTask("desktop:status", async () => {
+    state.desktop = await transport.getDesktopStatus();
+    renderDesktopPanel();
+  });
+}
+
 async function loadProfiles() {
   await runTask("load", async () => {
-    const data = await api("/api/profiles");
+    const data = await transport.listProfiles();
     applyProfiles(data.profiles ?? []);
     render();
     maybeAutoRefreshUsage();
@@ -103,10 +159,33 @@ async function loadProfiles() {
 }
 
 function render() {
+  renderDesktopQuickbar();
   renderSummary();
   renderAutoSwitch();
+  renderDesktopPanel();
   renderList();
   renderDetail();
+}
+
+function renderDesktopQuickbar() {
+  if (!isDesktopMode()) {
+    els.desktopQuickbar.hidden = true;
+    return;
+  }
+  const managed = state.profiles.filter((profile) => !profile.isDefault);
+  const active = managed.find((profile) => profile.isActive);
+  els.desktopQuickbar.hidden = false;
+  els.desktopQuickbarActive.textContent = active
+    ? `当前运行槽位：${active.name}`
+    : "当前运行槽位：系统默认资料";
+  els.desktopQuickbarMeta.textContent = managed.length > 0
+    ? "右上角菜单栏入口如果被系统或第三方工具折叠，直接在这里看各槽位余量。"
+    : "先创建并登录槽位，这里会直接显示每个槽位的额度概览。";
+  if (managed.length === 0) {
+    els.desktopQuickbarProfiles.innerHTML = `<p class="muted desktop-quickbar-empty">还没有托管槽位。</p>`;
+    return;
+  }
+  els.desktopQuickbarProfiles.replaceChildren(...managed.map(renderDesktopQuickbarProfile));
 }
 
 function renderSummary() {
@@ -174,6 +253,25 @@ function renderProfileRow(profile) {
   return row;
 }
 
+function renderDesktopQuickbarProfile(profile) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `desktop-quickbar-profile ${profile.name === state.selectedName ? "is-selected" : ""}`;
+  button.addEventListener("click", () => {
+    state.selectedName = profile.name;
+    render();
+  });
+  button.innerHTML = `
+    <span class="desktop-quickbar-profile-name">
+      <strong>${escapeHTML(profile.name)}</strong>
+      ${profile.isActive ? '<span class="badge ok">当前</span>' : ""}
+      <span class="badge ${badgeClass(profile)}">${escapeHTML(statusLabel(profile))}</span>
+    </span>
+    <span class="desktop-quickbar-profile-quota">${escapeHTML(desktopQuickbarQuotaText(profile))}</span>
+  `;
+  return button;
+}
+
 function renderDetail() {
   const profile = state.profiles.find((item) => item.name === state.selectedName);
   if (!profile) {
@@ -233,6 +331,37 @@ function renderAutoSwitch() {
     .join("");
 }
 
+function renderDesktopPanel() {
+  if (!isDesktopMode()) {
+    els.desktopPanel.hidden = true;
+    return;
+  }
+  const status = state.desktop || {
+    hideWindowOnClose: true,
+    autoStartEnabled: false,
+    autoStartKind: "",
+    autoStartTarget: "",
+    canConfigureAutoStart: false,
+    autoStartMessage: "正在读取桌面状态。",
+  };
+  els.desktopPanel.hidden = false;
+  els.desktopAutoStartBadge.textContent = status.autoStartEnabled ? "已启用" : "未启用";
+  els.desktopAutoStartBadge.className = `badge ${status.autoStartEnabled ? "ok" : ""}`;
+  els.desktopAutoStartToggle.textContent = status.autoStartEnabled ? "关闭开机启动" : "开启开机启动";
+  els.desktopAutoStartToggle.disabled = !status.canConfigureAutoStart;
+  els.desktopPanelSummary.textContent = status.hideWindowOnClose
+    ? "关闭窗口会隐藏到后台；再次打开应用会回到当前客户端。"
+    : "当前窗口可以隐藏到后台，账号检查和自动切换会继续运行。";
+  const autoStartState = status.autoStartEnabled
+    ? `已启用${status.autoStartKind ? `（${status.autoStartKind}）` : ""}`
+    : `未启用${status.autoStartKind ? `（${status.autoStartKind}）` : ""}`;
+  els.desktopPanelMeta.innerHTML = `
+    ${detailItem("开机启动", autoStartState)}
+    ${detailItem("关闭按钮", status.hideWindowOnClose ? "隐藏窗口，不会直接退出" : "直接退出")}
+    ${detailItem("提示", status.autoStartMessage || (status.autoStartEnabled ? "开机启动时会先在后台拉起客户端；需要时再打开窗口。" : "可把窗口隐藏到后台；需要完全退出时点“退出客户端”。"))}
+  `;
+}
+
 function renderListQuota(profile) {
   if (!profile.cachedProbe) {
     return `
@@ -280,6 +409,24 @@ function renderDetailUsage(profile) {
   `;
 }
 
+function desktopQuickbarQuotaText(profile) {
+  if (!profile.hasCredential) return "未登录";
+  if (!profile.cachedProbe) return "未检查";
+  const parts = [];
+  const fiveHour = profile.cachedProbe.usage?.fiveHour;
+  const week = profile.cachedProbe.usage?.week;
+  if (typeof fiveHour?.leftPercent === "number") {
+    parts.push(`5h ${fiveHour.leftPercent}%`);
+  }
+  if (typeof week?.leftPercent === "number") {
+    parts.push(`周 ${week.leftPercent}%`);
+  }
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+  return profile.cachedProbe.reason || "已登录";
+}
+
 function detailItem(label, value) {
   return `
     <div class="detail-item">
@@ -301,7 +448,7 @@ function actionButton(label, handler, disabled = false, variant = "") {
 
 async function startLogin(name) {
   await runTask(`login:${name}`, async () => {
-    const data = await api(`/api/profiles/${encodeURIComponent(name)}/login/start`, { method: "POST" });
+    const data = await transport.startLogin(name);
     openLoginSheet(data);
     const opened = openURLInNewTab(data.authUrl);
     showToast(opened ? "已打开登录页。完成后会自动回到账号池；如果失败，可复制链接或粘贴回调地址。" : "浏览器拦截了新窗口。请点“新窗口打开”或“当前页打开”。");
@@ -319,6 +466,7 @@ function openLoginSheet(flow) {
   els.loginSheetTitle.textContent = `登录 ${flow.profileName}`;
   els.loginSheetSummary.textContent = `优先用系统浏览器完成 OpenAI 登录。完成后会自动写入本机槽位 ${flow.profileName}。`;
   els.loginSheetMeta.textContent = `回调地址：${flow.redirectUrl}。如果页面没有自动写回，把最终跳转地址或 code 粘贴到上面的输入框。`;
+  els.loginManualInput.placeholder = `${flow.redirectUrl}?code=...&state=...`;
   if (!els.loginManualInput.value.trim()) {
     els.loginManualInput.value = "";
   }
@@ -331,6 +479,10 @@ function closeLoginSheet() {
 }
 
 function openURLInNewTab(url) {
+  if (runtime && typeof runtime.BrowserOpenURL === "function") {
+    runtime.BrowserOpenURL(url);
+    return true;
+  }
   const popup = window.open(url, "_blank", "noopener");
   return Boolean(popup);
 }
@@ -345,6 +497,11 @@ function openLoginInNewTab() {
 
 function openLoginInCurrentTab() {
   if (!state.login?.authUrl) {
+    return;
+  }
+  if (runtime && typeof runtime.BrowserOpenURL === "function") {
+    runtime.BrowserOpenURL(state.login.authUrl);
+    showToast("桌面客户端会使用系统浏览器打开登录页。");
     return;
   }
   window.location.assign(state.login.authUrl);
@@ -383,10 +540,7 @@ async function submitManualLogin() {
     return;
   }
   await runTask(`login-complete:${profileName}`, async () => {
-    const result = await api(`/api/profiles/${encodeURIComponent(profileName)}/login/complete`, {
-      method: "POST",
-      body: { input },
-    });
+    const result = await transport.completeManualLogin(profileName, input);
     els.loginManualInput.value = "";
     closeLoginSheet();
     showToast(result.message || `${profileName} 已写入本机账号池。`);
@@ -396,7 +550,7 @@ async function submitManualLogin() {
 
 async function probeProfile(name) {
   await runTask(`probe:${name}`, async () => {
-    const result = await api(`/api/profiles/${encodeURIComponent(name)}/probe`, { method: "POST" });
+    const result = await transport.probeProfile(name);
     showToast(`${name}: ${result.reason}`);
     await loadDashboard();
   });
@@ -404,7 +558,7 @@ async function probeProfile(name) {
 
 async function refreshAllUsage() {
   await runTask("refresh-usage", async () => {
-    const result = await api("/api/usage/refresh", { method: "POST" });
+    const result = await transport.refreshUsage();
     const failedCount = Object.keys(result.failed || {}).length;
     showToast(`已刷新 ${result.refreshed?.length || 0} 个槽位${failedCount ? `，失败 ${failedCount} 个` : ""}`);
     await loadDashboard();
@@ -427,17 +581,14 @@ function maybeAutoRefreshUsage() {
 
 async function loadAutoSwitchStatus() {
   await runTask("auto-switch:load", async () => {
-    state.autoSwitch = await api("/api/auto-switch");
+    state.autoSwitch = await transport.getAutoSwitchStatus();
     renderAutoSwitch();
   });
 }
 
 async function toggleAutoSwitch() {
   await runTask("auto-switch:toggle", async () => {
-    const result = await api("/api/auto-switch", {
-      method: "PATCH",
-      body: { enabled: !state.autoSwitch?.enabled },
-    });
+    const result = await transport.setAutoSwitchEnabled(!state.autoSwitch?.enabled);
     state.autoSwitch = result.status;
     renderAutoSwitch();
     await loadProfiles();
@@ -447,7 +598,7 @@ async function toggleAutoSwitch() {
 
 async function runAutoSwitchCheck() {
   await runTask("auto-switch:run", async () => {
-    const result = await api("/api/auto-switch/run", { method: "POST" });
+    const result = await transport.runAutoSwitchCheck();
     state.autoSwitch = result.status;
     renderAutoSwitch();
     await loadProfiles();
@@ -455,9 +606,40 @@ async function runAutoSwitchCheck() {
   });
 }
 
+async function toggleDesktopAutoStart() {
+  if (!isDesktopMode()) {
+    return;
+  }
+  await runTask("desktop:autostart", async () => {
+    const previousEnabled = Boolean(state.desktop?.autoStartEnabled);
+    state.desktop = await transport.setDesktopAutoStart(!state.desktop?.autoStartEnabled);
+    renderDesktopPanel();
+    if (state.desktop.autoStartEnabled !== previousEnabled) {
+      showToast(state.desktop.autoStartEnabled ? "已开启开机启动。" : "已关闭开机启动。");
+      return;
+    }
+    showToast(state.desktop.autoStartMessage || "开机启动状态未变化。");
+  });
+}
+
+function hideDesktopWindow() {
+  if (!runtime || typeof runtime.Hide !== "function") {
+    return;
+  }
+  showToast("客户端已隐藏到后台。点 Dock 图标或重新打开应用可以回来。");
+  runtime.Hide();
+}
+
+function quitDesktopApp() {
+  if (!runtime || typeof runtime.Quit !== "function") {
+    return;
+  }
+  runtime.Quit();
+}
+
 async function activateProfile(name) {
   await runTask(`activate:${name}`, async () => {
-    await api(`/api/profiles/${encodeURIComponent(name)}/activate`, { method: "POST" });
+    await transport.activateProfile(name);
     showToast(`已切换到 ${name}`);
     await loadDashboard();
   });
@@ -468,27 +650,10 @@ async function removeProfile(name) {
     return;
   }
   await runTask(`remove:${name}`, async () => {
-    const result = await api(`/api/profiles/${encodeURIComponent(name)}/remove`, { method: "POST" });
+    const result = await transport.removeProfile(name);
     showToast(result.message || `已移除 ${name}`);
     await loadDashboard();
   });
-}
-
-async function api(path, options = {}) {
-  const init = {
-    method: options.method ?? "GET",
-    headers: {},
-  };
-  if (options.body) {
-    init.headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(options.body);
-  }
-  const response = await fetch(path, init);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error || `请求失败: ${response.status}`);
-  }
-  return data;
 }
 
 async function runTask(key, task) {
@@ -634,8 +799,8 @@ function compactAutoSwitchMessage(message) {
 async function silentRefreshDashboard() {
   try {
     const [profiles, autoSwitch] = await Promise.all([
-      api("/api/profiles"),
-      api("/api/auto-switch"),
+      transport.listProfiles(),
+      transport.getAutoSwitchStatus(),
     ]);
     applyProfiles(profiles.profiles ?? []);
     state.autoSwitch = autoSwitch;
@@ -643,6 +808,28 @@ async function silentRefreshDashboard() {
   } catch {
     // Ignore silent polling errors; manual actions still surface errors.
   }
+}
+
+function bindDesktopRuntimeEvents() {
+  if (!runtime || typeof runtime.EventsOn !== "function") {
+    return;
+  }
+  runtime.EventsOn(LOGIN_RUNTIME_EVENT, (payload) => {
+    if (!payload) {
+      return;
+    }
+    void consumeLoginResult(JSON.stringify(payload));
+  });
+  runtime.EventsOn(DESKTOP_ACTION_RUNTIME_EVENT, (payload) => {
+    void consumeDesktopAction(payload);
+  });
+  runtime.EventsOn(FOCUS_PROFILE_RUNTIME_EVENT, (payload) => {
+    void focusProfileFromDesktop(payload);
+  });
+}
+
+function isDesktopMode() {
+  return Boolean(runtime && typeof runtime.Quit === "function");
 }
 
 function escapeHTML(value) {
@@ -683,4 +870,30 @@ async function consumeLoginResult(raw) {
   }
   showToast(payload.body || payload.title || "登录状态已更新。");
   await loadDashboard();
+}
+
+async function consumeDesktopAction(payload) {
+  if (!payload) {
+    return;
+  }
+  if (payload.profileName) {
+    state.selectedName = payload.profileName;
+  }
+  showToast(payload.body || payload.title || "桌面操作已完成。");
+  await loadDashboard();
+}
+
+async function focusProfileFromDesktop(payload) {
+  const profileName = payload?.profileName;
+  if (!profileName) {
+    return;
+  }
+  state.selectedName = profileName;
+  try {
+    const data = await transport.listProfiles();
+    applyProfiles(data.profiles ?? []);
+  } catch {
+    // Ignore and keep the previous state if the silent sync failed.
+  }
+  render();
 }

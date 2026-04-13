@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/henry-insomniac/token-manager-tools/internal/accountpool"
+	"github.com/henry-insomniac/token-manager-tools/internal/appservice"
 )
 
 func TestProfilesAPICreatesAndListsProfile(t *testing.T) {
-	handler := NewHandler(newTestPool(t))
+	handler := NewHandler(appservice.New(newTestPool(t)))
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/profiles", bytes.NewBufferString(`{"name":"acct-api"}`))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -44,7 +45,7 @@ func TestProfilesAPICreatesAndListsProfile(t *testing.T) {
 
 func TestStartLoginAPIHidesVerifier(t *testing.T) {
 	pool := newTestPool(t)
-	handler := NewHandler(pool)
+	handler := NewHandler(appservice.New(pool))
 	if _, err := pool.CreateProfile("acct-login"); err != nil {
 		t.Fatalf("CreateProfile: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestStartLoginAPIHidesVerifier(t *testing.T) {
 }
 
 func TestCallbackRejectsUnknownState(t *testing.T) {
-	handler := NewHandler(newTestPool(t))
+	handler := NewHandler(appservice.New(newTestPool(t)))
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/auth/callback?code=abc&state=missing", nil))
 	if resp.Code != http.StatusOK {
@@ -102,7 +103,7 @@ func TestManualLoginCompleteAPI(t *testing.T) {
 	if _, err := pool.CreateProfile("acct-manual"); err != nil {
 		t.Fatalf("CreateProfile: %v", err)
 	}
-	handler := NewHandler(pool)
+	handler := NewHandler(appservice.New(pool))
 
 	startResp := httptest.NewRecorder()
 	handler.ServeHTTP(startResp, httptest.NewRequest(http.MethodPost, "/api/profiles/acct-manual/login/start", nil))
@@ -148,7 +149,7 @@ func TestManualLoginCompleteAPI(t *testing.T) {
 }
 
 func TestAutoSwitchAPIGetAndPatch(t *testing.T) {
-	handler := NewHandler(newTestPool(t))
+	handler := NewHandler(appservice.New(newTestPool(t)))
 
 	getResp := httptest.NewRecorder()
 	handler.ServeHTTP(getResp, httptest.NewRequest(http.MethodGet, "/api/auto-switch", nil))
@@ -180,7 +181,7 @@ func TestAutoSwitchAPIGetAndPatch(t *testing.T) {
 }
 
 func TestAutoSwitchRunAPI(t *testing.T) {
-	handler := NewHandler(newTestPool(t))
+	handler := NewHandler(appservice.New(newTestPool(t)))
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/auto-switch/run", nil))
 	if resp.Code != http.StatusOK {
@@ -249,7 +250,7 @@ func TestAutoSwitchEnableAPISwitchesActiveProfile(t *testing.T) {
 		t.Fatalf("ActivateProfile acct-a: %v", err)
 	}
 
-	handler := NewHandler(pool)
+	handler := NewHandler(appservice.New(pool))
 	patchReq := httptest.NewRequest(http.MethodPatch, "/api/auto-switch", bytes.NewBufferString(`{"enabled":true}`))
 	patchReq.Header.Set("Content-Type", "application/json")
 	patchResp := httptest.NewRecorder()

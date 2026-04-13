@@ -4,4 +4,5 @@ dist/
 *.pid
 *.pid.json
 /token-manager
+/token-manager-desktop
 /token-manager.exe

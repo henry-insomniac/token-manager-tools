@@ -1,7 +1,7 @@
 Token Manager Tools
 
 版本：
-0.1.0-preview.10
+0.1.0-preview.11
 
 用途：
 本工具用于在本机管理 Codex/OpenAI 账号池。它不需要安装 OpenClaw，也不会上传 token。
@@ -35,9 +35,10 @@ Windows PowerShell:
   token-manager stop      停止后台服务
 
 更新说明：
-  这版修复了浏览器 OAuth 已登录但回调页空白、报 ERR_EMPTY_RESPONSE 的问题。
-  本地服务现在会同时接住 127.0.0.1 和 localhost 回调，浏览器入口也统一显示 localhost。
-  如果回调端口已经被别的程序占用，工具会直接提示你换一个端口启动。
+  这版新增了桌面客户端预览分发包和应用图标。
+  macOS 压缩包内提供 Token Manager Tools.app，Windows 压缩包内提供 token-manager-desktop.exe。
+  桌面端登录仍然走系统浏览器，完成后会自动把结果带回客户端；回调端口也会自动避让。
+  桌面客户端支持关闭后隐藏、再次打开唤回，以及开机后隐藏启动。
 
 常用账号池命令：
   token-manager list

@@ -47,6 +47,7 @@ func runStart(args []string) error {
 	}
 	if existing != nil && platform.ProcessExists(existing.PID) {
 		if !shouldReplaceExistingServer(existing, executable, addr) {
+			reportAutoStartStatus(addr, executable)
 			fmt.Printf("账号池服务已在后台运行: %s\n", existing.URL)
 			return nil
 		}
@@ -84,6 +85,7 @@ func runStart(args []string) error {
 	if err := waitForServerReady(state.URL, 4*time.Second); err != nil {
 		return fmt.Errorf("后台服务已启动但暂未响应，请稍后访问 %s；日志: %s", state.URL, paths.LogPath)
 	}
+	reportAutoStartStatus(addr, executable)
 	fmt.Printf("账号池服务已在后台启动: %s\n", state.URL)
 	fmt.Printf("停止服务: token-manager stop\n")
 	return nil
@@ -99,11 +101,17 @@ func runStop() error {
 		return err
 	}
 	if state == nil {
+		if err := disableBackgroundAutoStart(); err != nil {
+			return fmt.Errorf("账号池服务未在后台运行，但移除开机自启失败: %w", err)
+		}
 		fmt.Println("账号池服务未在后台运行")
 		return nil
 	}
 	if !platform.ProcessExists(state.PID) {
 		_ = os.Remove(paths.PIDPath)
+		if err := disableBackgroundAutoStart(); err != nil {
+			return fmt.Errorf("账号池服务未在后台运行，但移除开机自启失败: %w", err)
+		}
 		fmt.Println("账号池服务未在后台运行，已清理过期状态")
 		return nil
 	}
@@ -111,6 +119,9 @@ func runStop() error {
 		return err
 	}
 	_ = os.Remove(paths.PIDPath)
+	if err := disableBackgroundAutoStart(); err != nil {
+		return fmt.Errorf("账号池服务已停止，但移除开机自启失败: %w", err)
+	}
 	fmt.Println("账号池服务已停止")
 	return nil
 }
@@ -129,11 +140,13 @@ func runStatus() error {
 			_ = os.Remove(paths.PIDPath)
 		}
 		fmt.Println("账号池服务未在后台运行")
+		printAutoStartStatus()
 		return nil
 	}
 	fmt.Printf("账号池服务正在后台运行: %s\n", state.URL)
 	fmt.Printf("PID: %d\n", state.PID)
 	fmt.Printf("日志: %s\n", state.LogPath)
+	printAutoStartStatus()
 	return nil
 }
 
@@ -226,4 +239,45 @@ func normalizeExecutablePath(path string) string {
 		return ""
 	}
 	return filepath.Clean(path)
+}
+
+func reportAutoStartStatus(addr, executable string) {
+	status, err := ensureBackgroundAutoStart(addr, executable)
+	if err != nil {
+		fmt.Printf("未启用开机自启: %v\n", err)
+		return
+	}
+	fmt.Printf("开机后自动启动: 已启用（%s）\n", status.Kind)
+}
+
+func printAutoStartStatus() {
+	status, err := platform.GetAutoStartStatus(platform.AutoStartOptions{})
+	if err != nil {
+		fmt.Printf("开机后自动启动: 状态未知（%v）\n", err)
+		return
+	}
+	if status.Enabled {
+		fmt.Printf("开机后自动启动: 已启用（%s）\n", status.Kind)
+		return
+	}
+	fmt.Printf("开机后自动启动: 未启用（%s）\n", status.Kind)
+}
+
+func ensureBackgroundAutoStart(addr, executable string) (platform.AutoStartStatus, error) {
+	executable = normalizeExecutablePath(executable)
+	if err := platform.ValidatePersistentExecutable(executable); err != nil {
+		return platform.AutoStartStatus{}, err
+	}
+	return platform.EnsureAutoStart(platform.AutoStartOptions{
+		ExecutablePath: executable,
+		Args:           autoStartArgs(addr),
+	})
+}
+
+func disableBackgroundAutoStart() error {
+	return platform.DisableAutoStart(platform.AutoStartOptions{})
+}
+
+func autoStartArgs(addr string) []string {
+	return []string{"start", strings.TrimSpace(addr), "--no-open"}
 }
